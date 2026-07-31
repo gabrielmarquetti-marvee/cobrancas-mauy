@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0f172a">
+<title>Cobrança - Gestão de Inadimplentes</title>
+<link rel="manifest" href="manifest.json">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  :root{
+    --bg:#0f172a; --panel:#1e293b; --panel2:#273449; --line:#334155;
+    --txt:#e2e8f0; --muted:#94a3b8; --brand:#f59e0b; --brand2:#fbbf24;
+    --green:#22c55e; --red:#ef4444; --yellow:#eab308; --blue:#3b82f6;
+  }
+  body{ font-family:-apple-system,'Segoe UI',Roboto,sans-serif; background:var(--bg); color:var(--txt); padding-bottom:90px; }
+  .container{ max-width:900px; margin:0 auto; padding:16px; }
+
+  header.app{ position:sticky; top:0; z-index:20; background:linear-gradient(135deg,#f59e0b,#d97706); color:#1a1200; padding:16px; box-shadow:0 2px 12px rgba(0,0,0,.4); }
+  header.app h1{ font-size:19px; display:flex; align-items:center; gap:8px; }
+  header.app .sub{ font-size:12px; opacity:.8; margin-top:2px; }
+
+  /* KPIs */
+  .kpis{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:16px 0; }
+  .kpi{ background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px 12px; text-align:center; }
+  .kpi .v{ font-size:20px; font-weight:800; }
+  .kpi .l{ font-size:11px; color:var(--muted); margin-top:2px; text-transform:uppercase; letter-spacing:.5px; }
+  .kpi.red .v{ color:var(--red); } .kpi.green .v{ color:var(--green); } .kpi.yellow .v{ color:var(--yellow); }
+
+  /* Toolbar */
+  .toolbar{ display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
+  .search{ flex:1; min-width:160px; }
+  input,select,textarea{ width:100%; background:var(--panel2); border:1px solid var(--line); color:var(--txt); padding:11px 12px; border-radius:10px; font-size:15px; font-family:inherit; }
+  input:focus,select:focus,textarea:focus{ outline:none; border-color:var(--brand); }
+  select{ appearance:none; }
+  label.fld{ display:block; font-size:12px; color:var(--muted); margin:10px 0 5px; font-weight:600; }
+
+  .tools{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
+  .btn{ background:var(--brand); color:#1a1200; border:none; padding:11px 16px; border-radius:10px; font-weight:700; font-size:14px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
+  .btn:active{ transform:scale(.97); }
+  .btn.sec{ background:var(--panel2); color:var(--txt); border:1px solid var(--line); }
+  .btn.wide{ width:100%; justify-content:center; }
+  .btn.danger{ background:var(--red); color:#fff; }
+  .btn.wa{ background:#25d366; color:#043; }
+  .btn.sm{ padding:7px 11px; font-size:13px; }
+  .btn.tiny{ padding:6px 10px; font-size:12px; }
+
+  /* Filter chips */
+  .chips{ display:flex; gap:8px; overflow-x:auto; padding-bottom:6px; margin-bottom:12px; }
+  .chip{ white-space:nowrap; background:var(--panel); border:1px solid var(--line); color:var(--muted); padding:7px 13px; border-radius:20px; font-size:13px; cursor:pointer; font-weight:600; }
+  .chip.active{ background:var(--brand); color:#1a1200; border-color:var(--brand); }
+
+  /* Client cards */
+  .card{ background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px; margin-bottom:11px; cursor:pointer; transition:border-color .15s, opacity .15s; }
+  .card:active{ border-color:var(--brand); }
+  .card.pago{ opacity:.6; border-left:4px solid var(--green); }
+  .card.atraso{ border-left:4px solid var(--red); }
+  .card.critico{ border-left:4px solid var(--red); background:linear-gradient(90deg,rgba(239,68,68,.08),var(--panel)); }
+  .card.negoc{ border-left:4px solid var(--yellow); }
+  .card .top{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+  .card .nome{ font-size:16px; font-weight:700; }
+  .card .doc{ font-size:12px; color:var(--muted); margin-top:2px; }
+  .card .rightcol{ display:flex; flex-direction:column; align-items:flex-end; gap:8px; }
+  .card .meta{ display:flex; gap:14px; margin-top:10px; flex-wrap:wrap; }
+  .card .meta .m .ml{ font-size:10px; color:var(--muted); text-transform:uppercase; }
+  .card .meta .m .mv{ font-size:14px; font-weight:700; }
+  .badge{ font-size:11px; font-weight:700; padding:4px 10px; border-radius:20px; white-space:nowrap; }
+  .b-atraso{ background:rgba(239,68,68,.15); color:#fca5a5; }
+  .b-dia{ background:rgba(34,197,94,.15); color:#86efac; }
+  .b-pago{ background:rgba(148,163,184,.15); color:#cbd5e1; }
+  .b-negoc{ background:rgba(234,179,8,.15); color:#fde047; }
+  .b-critico{ background:var(--red); color:#fff; }
+  .prox{ font-size:11px; color:var(--brand2); font-weight:600; margin-top:4px; }
+
+  /* Check pago */
+  .check{ width:32px; height:32px; border-radius:50%; border:2px solid var(--line); background:transparent; color:transparent; font-size:18px; font-weight:900; cursor:pointer; display:flex; align-items:center; justify-content:center; flex:0 0 auto; transition:all .15s; }
+  .check:active{ transform:scale(.9); }
+  .check.on{ background:var(--green); border-color:var(--green); color:#043; }
+
+  .empty{ text-align:center; padding:50px 20px; color:var(--muted); }
+  .empty .ico{ font-size:44px; margin-bottom:12px; }
+
+  /* Modal */
+  .modal{ display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:50; overflow-y:auto; }
+  .modal.open{ display:block; }
+  .sheet{ background:var(--bg); min-height:100%; max-width:900px; margin:0 auto; }
+  .sheet header{ display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; z-index:5; background:linear-gradient(135deg,#f59e0b,#d97706); color:#1a1200; padding:16px; }
+  .sheet header h1{ font-size:18px; }
+  .sheet .x{ background:rgba(0,0,0,.15); border:none; color:#1a1200; width:34px; height:34px; border-radius:50%; font-size:20px; cursor:pointer; font-weight:700; }
+  .sheet .body{ padding:16px; }
+  .row2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+
+  .section-t{ font-size:13px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin:22px 0 10px; display:flex; align-items:center; gap:7px; }
+
+  .det-head{ background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px; }
+  .det-head .nome{ font-size:22px; font-weight:800; }
+  .det-grid{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:14px; }
+  .det-grid .di .dl{ font-size:11px; color:var(--muted); text-transform:uppercase; }
+  .det-grid .di .dv{ font-size:15px; font-weight:600; margin-top:2px; }
+
+  /* Parcelas */
+  .parc{ display:flex; align-items:center; gap:10px; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:8px; }
+  .parc.pago{ opacity:.6; border-left:3px solid var(--green); }
+  .parc.atraso{ border-left:3px solid var(--red); }
+  .parc .pnum{ font-weight:800; font-size:13px; width:34px; color:var(--muted); }
+  .parc .pinfo{ flex:1; }
+  .parc .pv{ font-weight:700; font-size:15px; }
+  .parc .pd{ font-size:11px; color:var(--muted); }
+  .parc .pd.late{ color:var(--red); font-weight:700; }
+  .progress{ background:var(--panel2); border-radius:20px; height:10px; overflow:hidden; margin:6px 0 10px; }
+  .progress > i{ display:block; height:100%; background:var(--green); }
+
+  /* Ocorrências timeline */
+  .occ{ position:relative; padding-left:24px; margin-bottom:14px; }
+  .occ::before{ content:''; position:absolute; left:6px; top:4px; bottom:-14px; width:2px; background:var(--line); }
+  .occ:last-child::before{ display:none; }
+  .occ .dot{ position:absolute; left:0; top:3px; width:14px; height:14px; border-radius:50%; background:var(--brand); border:2px solid var(--bg); }
+  .occ .oc-t{ display:flex; justify-content:space-between; gap:8px; }
+  .occ .oc-tipo{ font-weight:700; font-size:14px; }
+  .occ .oc-data{ font-size:11px; color:var(--muted); }
+  .occ .oc-txt{ font-size:14px; color:var(--txt); margin-top:4px; line-height:1.4; white-space:pre-wrap; }
+
+  .fab{ position:fixed; bottom:20px; right:20px; z-index:30; background:var(--brand); color:#1a1200; width:58px; height:58px; border-radius:50%; border:none; font-size:28px; box-shadow:0 4px 16px rgba(245,158,11,.5); cursor:pointer; display:flex; align-items:center; justify-content:center; }
+  .fab:active{ transform:scale(.92); }
+
+  .toast{ position:fixed; bottom:100px; left:50%; transform:translateX(-50%); background:var(--green); color:#043; padding:12px 22px; border-radius:30px; font-weight:700; z-index:100; opacity:0; transition:opacity .3s, transform .3s; pointer-events:none; }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(-6px); }
+
+  .muted{ color:var(--muted); font-size:13px; }
+  .flexb{ display:flex; gap:8px; }
+  hr.sep{ border:none; border-top:1px solid var(--line); margin:18px 0; }
+</style>
+</head>
+<body>
+
+<header class="app">
+  <div class="container" style="padding:0;">
+    <h1>⚡ Central de Cobrança</h1>
+    <div class="sub">Gestão de inadimplentes e ocorrências</div>
+  </div>
+</header>
+
+<div class="container">
+  <!-- KPIs -->
+  <div class="kpis">
+    <div class="kpi red"><div class="v" id="kpiAtraso">R$ 0</div><div class="l">Em atraso</div></div>
+    <div class="kpi yellow"><div class="v" id="kpiQtd">0</div><div class="l">Inadimplentes</div></div>
+    <div class="kpi green"><div class="v" id="kpiRecebido">R$ 0</div><div class="l">Recebido</div></div>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <div class="search"><input type="text" id="busca" placeholder="🔍 Buscar por nome, CPF/CNPJ ou nota..." oninput="render()"></div>
+  </div>
+
+  <div class="tools">
+    <button class="btn sec tiny" onclick="exportarCSV()">📊 Exportar CSV</button>
+    <button class="btn sec tiny" onclick="imprimirRelatorio()">🖨️ Relatório</button>
+    <button class="btn sec tiny" onclick="backupExport()">💾 Backup</button>
+    <button class="btn sec tiny" onclick="document.getElementById('importFile').click()">📂 Restaurar</button>
+    <input type="file" id="importFile" accept="application/json" style="display:none" onchange="backupImport(event)">
+  </div>
+
+  <div class="chips" id="chips">
+    <div class="chip active" data-f="todos" onclick="setFiltro('todos')">Todos</div>
+    <div class="chip" data-f="atraso" onclick="setFiltro('atraso')">Em atraso</div>
+    <div class="chip" data-f="critico" onclick="setFiltro('critico')">Crítico (+30d)</div>
+    <div class="chip" data-f="negociando" onclick="setFiltro('negociando')">Negociando</div>
+    <div class="chip" data-f="hoje" onclick="setFiltro('hoje')">Contato hoje</div>
+    <div class="chip" data-f="pago" onclick="setFiltro('pago')">Pagos</div>
+  </div>
+
+  <div id="lista"></div>
+</div>
+
+<button class="fab" onclick="abrirForm()">+</button>
+
+<!-- MODAL: Cadastro/Edição -->
+<div class="modal" id="modalForm">
+  <div class="sheet">
+    <header><h1 id="formTitulo">Novo cadastro</h1><button class="x" onclick="fecharModal('modalForm')">×</button></header>
+    <div class="body">
+      <input type="hidden" id="fId">
+      <div class="section-t">👤 Dados cadastrais</div>
+      <label class="fld">Nome / Razão social *</label>
+      <input type="text" id="fNome" placeholder="Nome completo ou empresa">
+      <div class="row2">
+        <div><label class="fld">Tipo</label>
+          <select id="fTipo" onchange="maskDoc()"><option value="CPF">CPF</option><option value="CNPJ">CNPJ</option></select></div>
+        <div><label class="fld">CPF / CNPJ</label>
+          <input type="text" id="fDoc" placeholder="000.000.000-00" oninput="maskDoc()"></div>
+      </div>
+      <button type="button" class="btn sec tiny" id="btnCNPJ" style="display:none;margin-top:8px;" onclick="buscarCNPJ()">🔍 Buscar dados do CNPJ na Receita</button>
+      <div class="row2">
+        <div><label class="fld">Telefone / WhatsApp</label><input type="tel" id="fTel" placeholder="(00) 00000-0000"></div>
+        <div><label class="fld">E-mail</label><input type="email" id="fEmail" placeholder="opcional"></div>
+      </div>
+      <div class="section-t">🧾 Dados da cobrança</div>
+      <div class="row2">
+        <div><label class="fld">Número da nota *</label><input type="text" id="fNota" placeholder="Ex: 001234"></div>
+        <div><label class="fld">Valor (R$) *</label><input type="text" id="fValor" inputmode="decimal" placeholder="0,00"></div>
+      </div>
+      <div class="row2">
+        <div><label class="fld">Vencimento</label><input type="date" id="fVenc"></div>
+        <div><label class="fld">Situação</label>
+          <select id="fStatus"><option value="aberto">Em aberto</option><option value="negociando">Negociando</option><option value="pago">Pago</option></select></div>
+      </div>
+      <label class="fld">Observações gerais</label>
+      <textarea id="fObs" rows="2" placeholder="Anotações sobre o cliente..."></textarea>
+      <hr class="sep">
+      <button class="btn wide" onclick="salvarCliente()">💾 Salvar cadastro</button>
+      <button class="btn sec wide danger" id="btnExcluir" style="margin-top:10px; display:none;" onclick="excluirCliente()">🗑️ Excluir cadastro</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Detalhe / Ocorrências -->
+<div class="modal" id="modalDet">
+  <div class="sheet">
+    <header><h1>Ficha do cliente</h1><button class="x" onclick="fecharModal('modalDet')">×</button></header>
+    <div class="body" id="detBody"></div>
+  </div>
+</div>
+
+<!-- MODAL: Nova ocorrência -->
+<div class="modal" id="modalOcc">
+  <div class="sheet">
+    <header><h1>Registrar ocorrência</h1><button class="x" onclick="fecharModal('modalOcc')">×</button></header>
+    <div class="body">
+      <input type="hidden" id="oClienteId">
+      <label class="fld">Tipo de contato</label>
+      <select id="oTipo">
+        <option>📞 Ligação</option><option>💬 WhatsApp</option><option>✉️ E-mail</option>
+        <option>🏢 Visita</option><option>🤝 Negociação</option><option>📅 Promessa de pagamento</option>
+        <option>💰 Pagamento recebido</option><option>⚠️ Sem retorno</option><option>📝 Outro</option>
+      </select>
+      <label class="fld">Data</label><input type="date" id="oData">
+      <label class="fld">Descrição / o que foi combinado</label>
+      <textarea id="oTexto" rows="4" placeholder="Ex: Cliente informou que paga até sexta..."></textarea>
+      <label class="fld">Agendar próximo contato (opcional)</label><input type="date" id="oProximo">
+      <hr class="sep">
+      <button class="btn wide" onclick="salvarOcorrencia()">✔️ Registrar ocorrência</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Criar acordo -->
+<div class="modal" id="modalAcordo">
+  <div class="sheet">
+    <header><h1>Acordo de parcelamento</h1><button class="x" onclick="fecharModal('modalAcordo')">×</button></header>
+    <div class="body">
+      <input type="hidden" id="aClienteId">
+      <label class="fld">Valor total do acordo (R$)</label>
+      <input type="text" id="aTotal" inputmode="decimal" placeholder="0,00">
+      <div class="row2">
+        <div><label class="fld">Nº de parcelas</label>
+          <select id="aQtd">
+            <option value="1">1x</option><option value="2">2x</option><option value="3">3x</option>
+            <option value="4">4x</option><option value="5">5x</option><option value="6">6x</option>
+            <option value="7">7x</option><option value="8">8x</option><option value="9">9x</option>
+            <option value="10">10x</option><option value="11">11x</option><option value="12">12x</option>
+          </select></div>
+        <div><label class="fld">1º vencimento</label><input type="date" id="aData"></div>
+      </div>
+      <div class="muted" id="aPreview" style="margin-top:10px;"></div>
+      <hr class="sep">
+      <button class="btn wide" onclick="gerarAcordo()">🤝 Gerar parcelas</button>
+      <button class="btn sec wide danger" id="aExcluir" style="margin-top:10px; display:none;" onclick="excluirAcordo()">🗑️ Remover acordo</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const KEY='cobranca_energetico_v1';
+let db = load();
+let filtro='todos';
+
+function load(){ try{ return JSON.parse(localStorage.getItem(KEY))||{clientes:[]}; }catch(e){ return {clientes:[]}; } }
+function save(){ localStorage.setItem(KEY, JSON.stringify(db)); }
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); }
+function fmtBR(n){ return 'R$ '+(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function fmtBRk(n){ if(n>=1000) return 'R$ '+(n/1000).toFixed(1).replace('.',',')+'k'; return 'R$ '+(n||0).toFixed(0); }
+function hoje(){ return new Date().toISOString().slice(0,10); }
+function parseValor(s){ if(s==null) return 0; if(typeof s==='number') return s; return parseFloat(String(s).replace(/\./g,'').replace(',','.'))||0; }
+function dataBR(iso){ if(!iso) return '—'; const [a,m,d]=iso.split('-'); return d+'/'+m+'/'+a; }
+function esc(s){ return (s||'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
+function diffDias(iso){ return Math.floor((new Date(hoje())-new Date(iso))/(1000*60*60*24)); }
+
+/* ---------- lógica financeira (considera acordo) ---------- */
+function temAcordo(c){ return c.acordo && c.acordo.parcelas && c.acordo.parcelas.length; }
+function valorEmAberto(c){
+  if(c.status==='pago') return 0;
+  if(temAcordo(c)) return c.acordo.parcelas.filter(p=>!p.pago).reduce((s,p)=>s+parseValor(p.valor),0);
+  return parseValor(c.valor);
+}
+function valorPago(c){
+  if(c.status==='pago') return parseValor(c.valor);
+  if(temAcordo(c)) return c.acordo.parcelas.filter(p=>p.pago).reduce((s,p)=>s+parseValor(p.valor),0);
+  return 0;
+}
+function diasAtraso(c){
+  if(c.status==='pago') return 0;
+  if(temAcordo(c)){
+    const atrasadas=c.acordo.parcelas.filter(p=>!p.pago && p.venc && diffDias(p.venc)>0);
+    if(!atrasadas.length) return 0;
+    return Math.max(...atrasadas.map(p=>diffDias(p.venc)));
+  }
+  if(!c.venc) return 0;
+  const d=diffDias(c.venc); return d>0?d:0;
+}
+
+/* ---------- Máscara documento ---------- */
+function maskDoc(){
+  const tipo=document.getElementById('fTipo').value, el=document.getElementById('fDoc');
+  let v=el.value.replace(/\D/g,'');
+  if(tipo==='CPF'){ v=v.slice(0,11).replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d{1,2})$/,'$1-$2'); el.placeholder='000.000.000-00'; }
+  else{ v=v.slice(0,14).replace(/(\d{2})(\d)/,'$1.$2').replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d)/,'$1/$2').replace(/(\d{4})(\d{1,2})$/,'$1-$2'); el.placeholder='00.000.000/0000-00'; }
+  el.value=v;
+  document.getElementById('btnCNPJ').style.display = tipo==='CNPJ' ? 'inline-flex' : 'none';
+}
+
+/* Consulta CNPJ na Receita via BrasilAPI (requer internet) */
+async function buscarCNPJ(){
+  const btn=document.getElementById('btnCNPJ');
+  const cnpj=document.getElementById('fDoc').value.replace(/\D/g,'');
+  if(cnpj.length!==14){ toast('⚠️ Digite os 14 dígitos do CNPJ'); return; }
+  const orig=btn.textContent; btn.textContent='⏳ Consultando...'; btn.disabled=true;
+  try{
+    const r=await fetch('https://brasilapi.com.br/api/cnpj/v1/'+cnpj);
+    if(r.status===404){ toast('❌ CNPJ não encontrado'); return; }
+    if(!r.ok) throw new Error('http '+r.status);
+    const d=await r.json();
+    const nomeEl=document.getElementById('fNome');
+    nomeEl.value = d.razao_social || d.nome_fantasia || nomeEl.value;
+    const telEl=document.getElementById('fTel');
+    if(!telEl.value && d.ddd_telefone_1){
+      const t=String(d.ddd_telefone_1).replace(/\D/g,'');
+      telEl.value = t.length>=10 ? `(${t.slice(0,2)}) ${t.slice(2,t.length-4)}-${t.slice(-4)}` : t;
+    }
+    const emEl=document.getElementById('fEmail');
+    if(!emEl.value && d.email) emEl.value=d.email;
+    const situ = d.descricao_situacao_cadastral ? ` · ${d.descricao_situacao_cadastral}` : '';
+    toast('✅ '+((d.nome_fantasia||d.razao_social||'').slice(0,22))+situ);
+  }catch(e){
+    toast('⚠️ Sem conexão ou serviço indisponível');
+  }finally{ btn.textContent=orig; btn.disabled=false; }
+}
+
+/* ---------- Filtros ---------- */
+function setFiltro(f){ filtro=f; document.querySelectorAll('.chip').forEach(c=>c.classList.toggle('active', c.dataset.f===f)); render(); }
+
+/* ---------- Render lista + KPIs ---------- */
+function render(){
+  const q=document.getElementById('busca').value.toLowerCase().trim();
+  let totalAtraso=0, qtdInad=0, recebido=0;
+  db.clientes.forEach(c=>{
+    recebido += valorPago(c);
+    if(c.status!=='pago' && diasAtraso(c)>0){ totalAtraso+=valorEmAberto(c); qtdInad++; }
+  });
+  document.getElementById('kpiAtraso').textContent=fmtBRk(totalAtraso);
+  document.getElementById('kpiQtd').textContent=qtdInad;
+  document.getElementById('kpiRecebido').textContent=fmtBRk(recebido);
+
+  let arr=db.clientes.slice().filter(c=>{
+    const dias=diasAtraso(c);
+    if(filtro==='atraso') return dias>0 && c.status!=='pago';
+    if(filtro==='critico') return dias>30 && c.status!=='pago';
+    if(filtro==='negociando') return c.status==='negociando';
+    if(filtro==='pago') return c.status==='pago';
+    if(filtro==='hoje') return c.proximoContato===hoje();
+    return true;
+  });
+  if(q) arr=arr.filter(c=> (c.nome||'').toLowerCase().includes(q) || (c.doc||'').toLowerCase().includes(q) || (c.nota||'').toLowerCase().includes(q) );
+  arr.sort((a,b)=>{
+    if(a.status==='pago' && b.status!=='pago') return 1;
+    if(b.status==='pago' && a.status!=='pago') return -1;
+    return diasAtraso(b)-diasAtraso(a);
+  });
+
+  const lista=document.getElementById('lista');
+  if(!arr.length){ lista.innerHTML=`<div class="empty"><div class="ico">📋</div><div>Nenhum cadastro encontrado.<br>Toque no + para adicionar o primeiro cliente.</div></div>`; return; }
+
+  lista.innerHTML=arr.map(c=>{
+    const dias=diasAtraso(c), pago=c.status==='pago';
+    let badge, bcls, cardcls='';
+    if(pago){ badge='Pago'; bcls='b-pago'; cardcls='pago'; }
+    else if(c.status==='negociando'){ badge='Negociando'; bcls='b-negoc'; cardcls='negoc'; }
+    else if(dias>30){ badge=dias+' dias'; bcls='b-critico'; cardcls='critico'; }
+    else if(dias>0){ badge=dias+' dias'; bcls='b-atraso'; cardcls='atraso'; }
+    else { badge='Em dia'; bcls='b-dia'; }
+    const aberto=valorEmAberto(c);
+    const acordoTxt = temAcordo(c) ? ` · ${c.acordo.parcelas.filter(p=>p.pago).length}/${c.acordo.parcelas.length} parc.` : '';
+    return `<div class="card ${cardcls}" onclick="abrirDetalhe('${c.id}')">
+      <div class="top">
+        <div>
+          <div class="nome">${esc(c.nome)}</div>
+          <div class="doc">${c.tipo}: ${esc(c.doc)||'—'} · Nota ${esc(c.nota)||'—'}${acordoTxt}</div>
+        </div>
+        <div class="rightcol">
+          <button class="check ${pago?'on':''}" title="Marcar como pago" onclick="event.stopPropagation(); togglePago('${c.id}')">✓</button>
+          <span class="badge ${bcls}">${badge}</span>
+        </div>
+      </div>
+      <div class="meta">
+        <div class="m"><div class="ml">${pago?'Valor':'Em aberto'}</div><div class="mv">${fmtBR(pago?parseValor(c.valor):aberto)}</div></div>
+        <div class="m"><div class="ml">Vencimento</div><div class="mv">${dataBR(c.venc)}</div></div>
+        <div class="m"><div class="ml">Ocorrências</div><div class="mv">${(c.ocorrencias||[]).length}</div></div>
+      </div>
+      ${c.proximoContato && !pago ? `<div class="prox">📅 Próximo contato: ${dataBR(c.proximoContato)}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+/* ---------- Check rápido de pago ---------- */
+function togglePago(id){
+  const c=db.clientes.find(x=>x.id===id); if(!c) return;
+  if(c.status==='pago'){
+    c.status='aberto';
+    if(temAcordo(c)) c.acordo.parcelas.forEach(p=>p.pago=false);
+    toast('↩️ Reaberto');
+  }else{
+    c.status='pago';
+    if(temAcordo(c)) c.acordo.parcelas.forEach(p=>p.pago=true);
+    if(!c.ocorrencias) c.ocorrencias=[];
+    c.ocorrencias.unshift({id:uid(),tipo:'💰 Pagamento recebido',data:hoje(),texto:'Pagamento confirmado (marcado como pago).',proximo:''});
+    toast('✅ Marcado como pago');
+  }
+  save(); render();
+  if(document.getElementById('modalDet').classList.contains('open')) abrirDetalhe(id);
+}
+
+/* ---------- Form cadastro ---------- */
+function abrirForm(id){
+  const f=document.getElementById('modalForm');
+  document.getElementById('btnExcluir').style.display = id?'flex':'none';
+  if(id){
+    const c=db.clientes.find(x=>x.id===id);
+    document.getElementById('formTitulo').textContent='Editar cadastro';
+    document.getElementById('fId').value=c.id;
+    document.getElementById('fNome').value=c.nome||''; document.getElementById('fTipo').value=c.tipo||'CPF';
+    document.getElementById('fDoc').value=c.doc||''; document.getElementById('fTel').value=c.tel||'';
+    document.getElementById('fEmail').value=c.email||''; document.getElementById('fNota').value=c.nota||'';
+    document.getElementById('fValor').value=c.valor||''; document.getElementById('fVenc').value=c.venc||'';
+    document.getElementById('fStatus').value=c.status||'aberto'; document.getElementById('fObs').value=c.obs||'';
+  }else{
+    document.getElementById('formTitulo').textContent='Novo cadastro';
+    ['fId','fNome','fDoc','fTel','fEmail','fNota','fValor','fVenc','fObs'].forEach(i=>document.getElementById(i).value='');
+    document.getElementById('fTipo').value='CPF'; document.getElementById('fStatus').value='aberto';
+  }
+  document.getElementById('btnCNPJ').style.display = document.getElementById('fTipo').value==='CNPJ' ? 'inline-flex' : 'none';
+  f.classList.add('open');
+}
+function salvarCliente(){
+  const nome=document.getElementById('fNome').value.trim();
+  const nota=document.getElementById('fNota').value.trim();
+  const valor=document.getElementById('fValor').value.trim();
+  if(!nome){ toast('⚠️ Informe o nome'); return; }
+  if(!nota){ toast('⚠️ Informe o número da nota'); return; }
+  if(!valor){ toast('⚠️ Informe o valor'); return; }
+  const id=document.getElementById('fId').value;
+  const dados={ nome, nota, valor,
+    tipo:document.getElementById('fTipo').value, doc:document.getElementById('fDoc').value.trim(),
+    tel:document.getElementById('fTel').value.trim(), email:document.getElementById('fEmail').value.trim(),
+    venc:document.getElementById('fVenc').value, status:document.getElementById('fStatus').value,
+    obs:document.getElementById('fObs').value.trim() };
+  if(id){ Object.assign(db.clientes.find(x=>x.id===id), dados); }
+  else{ db.clientes.push({ id:uid(), ...dados, proximoContato:'', ocorrencias:[], acordo:null, criadoEm:hoje() }); }
+  save(); render(); fecharModal('modalForm'); toast('✅ Cadastro salvo');
+}
+function excluirCliente(){
+  const id=document.getElementById('fId').value; if(!id) return;
+  if(!confirm('Excluir este cadastro e todo o histórico de ocorrências?')) return;
+  db.clientes=db.clientes.filter(x=>x.id!==id);
+  save(); render(); fecharModal('modalForm'); toast('🗑️ Excluído');
+}
+
+/* ---------- Detalhe ---------- */
+function abrirDetalhe(id){
+  const c=db.clientes.find(x=>x.id===id); if(!c) return;
+  const dias=diasAtraso(c);
+  const occs=(c.ocorrencias||[]).slice().sort((a,b)=> (b.data+b.id).localeCompare(a.data+a.id));
+  let statusTxt = c.status==='pago'?'✅ Pago': c.status==='negociando'?'🤝 Negociando': dias>0?`🔴 ${dias} dias em atraso`:'🟢 Em dia';
+
+  let acordoHtml='';
+  if(temAcordo(c)){
+    const ps=c.acordo.parcelas, pagas=ps.filter(p=>p.pago).length;
+    const pct=Math.round(pagas/ps.length*100);
+    acordoHtml=`
+      <div class="section-t">🤝 Acordo de parcelamento
+        <button class="btn sec tiny" style="margin-left:auto;" onclick="abrirAcordo('${c.id}')">Editar</button></div>
+      <div class="muted">${pagas} de ${ps.length} parcelas pagas · Restante: ${fmtBR(valorEmAberto(c))}</div>
+      <div class="progress"><i style="width:${pct}%"></i></div>
+      ${ps.map(p=>{
+        const late=!p.pago && p.venc && diffDias(p.venc)>0;
+        return `<div class="parc ${p.pago?'pago':''} ${late?'atraso':''}">
+          <button class="check ${p.pago?'on':''}" onclick="toggleParcela('${c.id}','${p.id}')">✓</button>
+          <span class="pnum">${p.num}ª</span>
+          <div class="pinfo"><div class="pv">${fmtBR(parseValor(p.valor))}</div>
+            <div class="pd ${late?'late':''}">Vence ${dataBR(p.venc)}${late?` · ${diffDias(p.venc)}d atraso`:''}${p.pago?' · pago':''}</div></div>
+        </div>`;
+      }).join('')}`;
+  }else if(c.status!=='pago'){
+    acordoHtml=`<div class="section-t">🤝 Acordo de parcelamento</div>
+      <button class="btn sec wide" onclick="abrirAcordo('${c.id}')">➕ Criar acordo de parcelamento</button>`;
+  }
+
+  document.getElementById('detBody').innerHTML=`
+    <div class="det-head">
+      <div class="nome">${esc(c.nome)}</div>
+      <div class="muted" style="margin-top:4px;">${c.tipo}: ${esc(c.doc)||'—'}</div>
+      <div style="margin-top:8px; font-weight:700; color:${dias>0&&c.status!=='pago'?'var(--red)':'var(--green)'}">${statusTxt}</div>
+      <div class="det-grid">
+        <div class="di"><div class="dl">Valor total</div><div class="dv">${fmtBR(parseValor(c.valor))}</div></div>
+        <div class="di"><div class="dl">Em aberto</div><div class="dv">${fmtBR(valorEmAberto(c))}</div></div>
+        <div class="di"><div class="dl">Nº da Nota</div><div class="dv">${esc(c.nota)||'—'}</div></div>
+        <div class="di"><div class="dl">Vencimento</div><div class="dv">${dataBR(c.venc)}</div></div>
+        <div class="di"><div class="dl">Telefone</div><div class="dv">${esc(c.tel)||'—'}</div></div>
+        <div class="di"><div class="dl">E-mail</div><div class="dv">${esc(c.email)||'—'}</div></div>
+      </div>
+      ${c.obs?`<div style="margin-top:12px;"><div class="dl" style="font-size:11px;color:var(--muted);text-transform:uppercase;">Observações</div><div style="font-size:14px;margin-top:3px;">${esc(c.obs)}</div></div>`:''}
+      <div class="flexb" style="margin-top:14px; flex-wrap:wrap;">
+        <button class="check ${c.status==='pago'?'on':''}" onclick="togglePago('${c.id}')" title="Marcar pago"></button>
+        ${c.tel?`<button class="btn wa sm" onclick="cobrarWhats('${c.id}')">💬 Cobrar no WhatsApp</button>`:''}
+        <button class="btn sec sm" onclick="fecharModal('modalDet'); abrirForm('${c.id}');">✏️ Editar</button>
+      </div>
+    </div>
+
+    ${acordoHtml}
+
+    <div class="section-t">📌 Histórico de ocorrências (${occs.length})</div>
+    <button class="btn wide" onclick="abrirOcc('${c.id}')">➕ Registrar nova ocorrência</button>
+    <div style="margin-top:18px;">
+      ${occs.length? occs.map(o=>`
+        <div class="occ"><div class="dot"></div>
+          <div class="oc-t"><span class="oc-tipo">${esc(o.tipo)}</span><span class="oc-data">${dataBR(o.data)}</span></div>
+          ${o.texto?`<div class="oc-txt">${esc(o.texto)}</div>`:''}
+          ${o.proximo?`<div class="prox" style="margin-top:6px;">📅 Próximo contato: ${dataBR(o.proximo)}</div>`:''}
+        </div>`).join('') : `<div class="muted" style="text-align:center; padding:20px;">Nenhuma ocorrência ainda.</div>`}
+    </div>`;
+  document.getElementById('modalDet').classList.add('open');
+}
+
+/* ---------- Ocorrências ---------- */
+function abrirOcc(clienteId){
+  document.getElementById('oClienteId').value=clienteId;
+  document.getElementById('oTipo').value='📞 Ligação';
+  document.getElementById('oData').value=hoje();
+  document.getElementById('oTexto').value=''; document.getElementById('oProximo').value='';
+  document.getElementById('modalOcc').classList.add('open');
+}
+function salvarOcorrencia(){
+  const id=document.getElementById('oClienteId').value;
+  const c=db.clientes.find(x=>x.id===id); if(!c) return;
+  const tipo=document.getElementById('oTipo').value;
+  const data=document.getElementById('oData').value||hoje();
+  const texto=document.getElementById('oTexto').value.trim();
+  const proximo=document.getElementById('oProximo').value;
+  if(!c.ocorrencias) c.ocorrencias=[];
+  c.ocorrencias.unshift({ id:uid(), tipo, data, texto, proximo });
+  if(proximo) c.proximoContato=proximo;
+  if(tipo.includes('Pagamento recebido')) c.status='pago';
+  else if(tipo.includes('Negociação')||tipo.includes('Promessa')) c.status='negociando';
+  save(); fecharModal('modalOcc'); render(); abrirDetalhe(id); toast('✔️ Ocorrência registrada');
+}
+
+/* ---------- Acordo / parcelamento ---------- */
+function previewAcordo(){
+  const total=parseValor(document.getElementById('aTotal').value);
+  const qtd=parseInt(document.getElementById('aQtd').value)||1;
+  const v=total/qtd;
+  document.getElementById('aPreview').textContent = total? `${qtd}x de ${fmtBR(v)}` : '';
+}
+function abrirAcordo(id){
+  const c=db.clientes.find(x=>x.id===id); if(!c) return;
+  document.getElementById('aClienteId').value=id;
+  document.getElementById('aTotal').value = c.valor||'';
+  document.getElementById('aQtd').value = temAcordo(c) ? c.acordo.parcelas.length : 3;
+  document.getElementById('aData').value = temAcordo(c) ? c.acordo.parcelas[0].venc : (c.venc||hoje());
+  document.getElementById('aExcluir').style.display = temAcordo(c)?'flex':'none';
+  previewAcordo();
+  fecharModal('modalDet');
+  document.getElementById('modalAcordo').classList.add('open');
+}
+function gerarAcordo(){
+  const id=document.getElementById('aClienteId').value;
+  const c=db.clientes.find(x=>x.id===id); if(!c) return;
+  const total=parseValor(document.getElementById('aTotal').value);
+  const qtd=parseInt(document.getElementById('aQtd').value)||1;
+  const dataIni=document.getElementById('aData').value||hoje();
+  if(!total){ toast('⚠️ Informe o valor total'); return; }
+  const base=Math.floor(total/qtd*100)/100;
+  const parcelas=[];
+  for(let i=0;i<qtd;i++){
+    const d=new Date(dataIni+'T00:00:00'); d.setMonth(d.getMonth()+i);
+    let valor=base;
+    if(i===qtd-1) valor=Math.round((total-base*(qtd-1))*100)/100; // ajusta última
+    parcelas.push({ id:uid(), num:i+1, valor, venc:d.toISOString().slice(0,10), pago:false });
+  }
+  c.acordo={ criadoEm:hoje(), total, parcelas };
+  c.status='negociando';
+  if(!c.ocorrencias) c.ocorrencias=[];
+  c.ocorrencias.unshift({id:uid(),tipo:'🤝 Negociação',data:hoje(),texto:`Acordo de parcelamento criado: ${qtd}x (total ${fmtBR(total)}).`,proximo:''});
+  save(); fecharModal('modalAcordo'); render(); abrirDetalhe(id); toast('🤝 Acordo criado');
+}
+function excluirAcordo(){
+  const id=document.getElementById('aClienteId').value;
+  const c=db.clientes.find(x=>x.id===id); if(!c) return;
+  if(!confirm('Remover o acordo de parcelamento?')) return;
+  c.acordo=null;
+  save(); fecharModal('modalAcordo'); render(); abrirDetalhe(id); toast('Acordo removido');
+}
+function toggleParcela(clienteId, parcelaId){
+  const c=db.clientes.find(x=>x.id===clienteId); if(!c||!temAcordo(c)) return;
+  const p=c.acordo.parcelas.find(x=>x.id===parcelaId); if(!p) return;
+  p.pago=!p.pago;
+  if(p.pago){ if(!c.ocorrencias) c.ocorrencias=[]; c.ocorrencias.unshift({id:uid(),tipo:'💰 Pagamento recebido',data:hoje(),texto:`${p.num}ª parcela paga (${fmtBR(parseValor(p.valor))}).`,proximo:''}); }
+  const todasPagas=c.acordo.parcelas.every(x=>x.pago);
+  c.status = todasPagas ? 'pago' : 'negociando';
+  save(); render(); abrirDetalhe(clienteId);
+}
+
+/* ---------- WhatsApp ---------- */
+function cobrarWhats(id){
+  const c=db.clientes.find(x=>x.id===id); if(!c) return;
+  const dias=diasAtraso(c), primeiroNome=(c.nome||'').split(' ')[0];
+  const aberto=valorEmAberto(c);
+  let msg;
+  if(dias>30) msg=`Olá, ${primeiroNome}. Consta em nosso sistema o débito da nota ${c.nota} no valor de ${fmtBR(aberto)}, vencida em ${dataBR(c.venc)} (${dias} dias em atraso). Precisamos regularizar essa pendência com urgência. Podemos combinar o pagamento hoje?`;
+  else if(dias>0) msg=`Olá, ${primeiroNome}! Passando para lembrar da nota ${c.nota} no valor de ${fmtBR(aberto)}, que venceu em ${dataBR(c.venc)}. Consegue regularizar? Qualquer dúvida estou à disposição.`;
+  else msg=`Olá, ${primeiroNome}! Lembrete da nota ${c.nota} no valor de ${fmtBR(aberto)}, com vencimento em ${dataBR(c.venc)}. Obrigado!`;
+  const tel=(c.tel||'').replace(/\D/g,''); const num= tel.length>=10 ? '55'+tel : '';
+  window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');
+  if(!c.ocorrencias) c.ocorrencias=[];
+  c.ocorrencias.unshift({ id:uid(), tipo:'💬 WhatsApp', data:hoje(), texto:'Mensagem de cobrança enviada via WhatsApp.', proximo:'' });
+  save(); render();
+}
+
+/* ---------- Backup / Export ---------- */
+function backupExport(){
+  const blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'});
+  baixar(blob, `backup-cobranca-${hoje()}.json`);
+  toast('💾 Backup gerado');
+}
+function backupImport(ev){
+  const file=ev.target.files[0]; if(!file) return;
+  const r=new FileReader();
+  r.onload=()=>{ try{
+    const d=JSON.parse(r.result);
+    if(!d.clientes) throw 0;
+    if(!confirm(`Restaurar backup com ${d.clientes.length} cadastro(s)? Isso substitui os dados atuais.`)) return;
+    db=d; save(); render(); toast('✅ Backup restaurado');
+  }catch(e){ toast('⚠️ Arquivo inválido'); } };
+  r.readAsText(file); ev.target.value='';
+}
+function exportarCSV(){
+  const head=['Nome','Tipo','Documento','Telefone','Email','Nota','Valor','Vencimento','Situacao','DiasAtraso','EmAberto','Ocorrencias','Parcelas'];
+  const linhas=db.clientes.map(c=>[
+    c.nome, c.tipo, c.doc, c.tel, c.email, c.nota,
+    parseValor(c.valor).toFixed(2).replace('.',','), c.venc, c.status,
+    diasAtraso(c), valorEmAberto(c).toFixed(2).replace('.',','),
+    (c.ocorrencias||[]).length, temAcordo(c)?c.acordo.parcelas.length+'x':'—'
+  ].map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(';'));
+  const csv='﻿'+[head.join(';'),...linhas].join('\r\n');
+  baixar(new Blob([csv],{type:'text/csv;charset=utf-8'}), `inadimplentes-${hoje()}.csv`);
+  toast('📊 CSV exportado');
+}
+function baixar(blob, nome){
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=nome;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+function imprimirRelatorio(){
+  const inad=db.clientes.filter(c=>c.status!=='pago' && diasAtraso(c)>0).sort((a,b)=>diasAtraso(b)-diasAtraso(a));
+  const total=inad.reduce((s,c)=>s+valorEmAberto(c),0);
+  const linhas=inad.map(c=>`<tr>
+    <td>${esc(c.nome)}</td><td>${esc(c.doc)||'—'}</td><td>${esc(c.nota)||'—'}</td>
+    <td style="text-align:right">${fmtBR(valorEmAberto(c))}</td>
+    <td style="text-align:center">${dataBR(c.venc)}</td>
+    <td style="text-align:center;color:#c00;font-weight:bold">${diasAtraso(c)}d</td>
+    <td>${esc(c.tel)||'—'}</td></tr>`).join('');
+  const w=window.open('','_blank');
+  w.document.write(`<html><head><title>Relatório de Inadimplentes</title><meta charset="utf-8">
+    <style>body{font-family:Arial,sans-serif;padding:24px;color:#111}h1{font-size:20px}
+    .sub{color:#666;font-size:13px;margin-bottom:16px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{border:1px solid #ccc;padding:7px 9px;text-align:left}
+    th{background:#f59e0b;color:#1a1200}
+    tr:nth-child(even){background:#f8f8f8}
+    .tot{margin-top:16px;font-size:16px;font-weight:bold}
+    @media print{.noprint{display:none}}</style></head>
+    <body>
+    <h1>⚡ Relatório de Inadimplentes</h1>
+    <div class="sub">Gerado em ${dataBR(hoje())} · ${inad.length} cliente(s) em atraso</div>
+    <table><thead><tr><th>Nome</th><th>CPF/CNPJ</th><th>Nota</th><th>Em aberto</th><th>Vencimento</th><th>Atraso</th><th>Telefone</th></tr></thead>
+    <tbody>${linhas||'<tr><td colspan=7 style="text-align:center">Nenhum inadimplente 🎉</td></tr>'}</tbody></table>
+    <div class="tot">Total em aberto: ${fmtBR(total)}</div>
+    <button class="noprint" onclick="window.print()" style="margin-top:20px;padding:10px 20px;background:#f59e0b;border:none;border-radius:8px;font-weight:bold;cursor:pointer">🖨️ Imprimir / Salvar PDF</button>
+    </body></html>`);
+  w.document.close();
+}
+
+function fecharModal(id){ document.getElementById(id).classList.remove('open'); }
+
+/* eventos */
+document.getElementById('aTotal').addEventListener('input', previewAcordo);
+document.getElementById('aQtd').addEventListener('change', previewAcordo);
+render();
+</script>
+</body>
+</html>
