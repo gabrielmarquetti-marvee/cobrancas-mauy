@@ -328,6 +328,33 @@
   </div>
 </div>
 
+<!-- MODAL: Tarifa / custa -->
+<div class="modal" id="modalTarifa">
+  <div class="sheet">
+    <header><h1>Lançar tarifa / custa</h1><button class="x" onclick="fecharModal('modalTarifa')">×</button></header>
+    <div class="body">
+      <input type="hidden" id="tClienteId">
+      <label class="fld">Descrição</label>
+      <input type="text" id="tDesc" list="tarifaSugestoes" placeholder="Ex: Custas de cartório">
+      <datalist id="tarifaSugestoes">
+        <option value="Tarifa de alteração de vencimento"></option>
+        <option value="Custas de cartório / protesto"></option>
+        <option value="Tarifa bancária (emissão / 2ª via boleto)"></option>
+        <option value="Honorários de cobrança"></option>
+        <option value="Juros de mora (banco)"></option>
+        <option value="Taxa de reemissão"></option>
+      </datalist>
+      <div class="row2">
+        <div><label class="fld">Valor (R$)</label><input type="text" id="tValor" inputmode="decimal" placeholder="0,00"></div>
+        <div><label class="fld">Data</label><input type="date" id="tData"></div>
+      </div>
+      <div class="muted" style="margin-top:8px;">Essas tarifas são somadas ao total a cobrar do cliente (além do valor da nota e de juros/multa, se ativos).</div>
+      <hr class="sep">
+      <button class="btn wide" onclick="salvarTarifa()">🧾 Lançar tarifa</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: Config juros/multa -->
 <div class="modal" id="modalConfig">
   <div class="sheet">
@@ -398,6 +425,10 @@ function encargos(c){
   return {multa, juros, total:multa+juros};
 }
 function valorAtualizado(c){ return valorEmAberto(c)+encargos(c).total; }
+/* Tarifas / custas extras */
+function somaTarifas(c){ if(c.status==='pago') return 0; return (c.tarifas||[]).reduce((s,t)=>s+parseValor(t.valor),0); }
+/* Montante total a cobrar = saldo em aberto + juros/multa + tarifas */
+function montanteCobrar(c){ return valorAtualizado(c)+somaTarifas(c); }
 /* Régua de cobrança */
 function reguaEtapa(dias){
   if(dias<=0) return null;
@@ -502,7 +533,7 @@ function render(){
     else if(dias>0){ badge=dias+' dias'; bcls='b-atraso'; cardcls='atraso'; }
     else { badge='Em dia'; bcls='b-dia'; }
     const aberto=valorEmAberto(c);
-    const enc=encargos(c);
+    const extra = !pago && montanteCobrar(c) > aberto+0.005;
     const acordoTxt = temAcordo(c) ? ` · ${c.acordo.parcelas.filter(p=>p.pago).length}/${c.acordo.parcelas.length} parc.` : '';
     return `<div class="card ${cardcls}" onclick="abrirDetalhe('${c.id}')">
       <div class="top">
@@ -520,7 +551,7 @@ function render(){
         <div class="m"><div class="ml">Vencimento</div><div class="mv">${dataBR(c.venc)}</div></div>
         <div class="m"><div class="ml">Ocorrências</div><div class="mv">${(c.ocorrencias||[]).length}</div></div>
       </div>
-      ${enc.total>0 ? `<div class="prox" style="color:var(--brand2)">💸 Com juros/multa: ${fmtBR(valorAtualizado(c))}</div>`:''}
+      ${extra ? `<div class="prox" style="color:var(--brand2)">💰 A cobrar: ${fmtBR(montanteCobrar(c))}</div>`:''}
       ${c.proximoContato && !pago ? `<div class="prox">📅 Próximo contato: ${dataBR(c.proximoContato)}</div>`:''}
     </div>`;
   }).join('');
@@ -603,7 +634,7 @@ function salvarCliente(){
     venc:document.getElementById('fVenc').value, status:document.getElementById('fStatus').value,
     obs:document.getElementById('fObs').value.trim(), reincidente:document.getElementById('fReincidente').checked };
   if(id){ Object.assign(db.clientes.find(x=>x.id===id), dados); }
-  else{ db.clientes.push({ id:uid(), ...dados, proximoContato:'', ocorrencias:[], acordo:null, pagamentos:[], criadoEm:hoje() }); }
+  else{ db.clientes.push({ id:uid(), ...dados, proximoContato:'', ocorrencias:[], acordo:null, pagamentos:[], tarifas:[], criadoEm:hoje() }); }
   save(); render(); fecharModal('modalForm'); toast('✅ Cadastro salvo');
 }
 function excluirCliente(){
@@ -643,6 +674,19 @@ function abrirDetalhe(id){
       ${pgs.length?`<div style="margin-top:10px;">${pgs.map(p=>`<div class="parc pago"><span class="pnum">✓</span><div class="pinfo"><div class="pv">${fmtBR(parseValor(p.valor))}</div><div class="pd">Recebido em ${dataBR(p.data)}</div></div><button class="btn sec tiny" onclick="excluirPagamento('${c.id}','${p.id}')">Remover</button></div>`).join('')}</div>`:''}`;
   }
 
+  // Tarifas / custas
+  const tfs=(c.tarifas||[]).slice().sort((a,b)=>(b.data+b.id).localeCompare(a.data+a.id));
+  let tarifasHtml=`<div class="section-t">🧾 Tarifas e custas ${somaTarifas(c)>0?`· total ${fmtBR(somaTarifas(c))}`:''}</div>
+    ${c.status!=='pago'?`<button class="btn wide" onclick="abrirTarifa('${c.id}')">➕ Lançar tarifa / custa</button>`:''}
+    ${tfs.length?`<div style="margin-top:10px;">${tfs.map(t=>`<div class="parc"><span class="pnum">🧾</span><div class="pinfo"><div class="pv">${fmtBR(parseValor(t.valor))}</div><div class="pd">${esc(t.descricao)||'Tarifa'} · ${dataBR(t.data)}</div></div><button class="btn sec tiny" onclick="excluirTarifa('${c.id}','${t.id}')">Remover</button></div>`).join('')}</div>`:''}`;
+
+  // Caixa "total a cobrar" (saldo + juros/multa + tarifas)
+  let montanteHtml='';
+  if(c.status!=='pago' && (enc.total>0 || somaTarifas(c)>0)){
+    montanteHtml=`<div class="encargo">💰 <b>Total a cobrar: ${fmtBR(montanteCobrar(c))}</b><br>
+      <span class="muted">Em aberto ${fmtBR(valorEmAberto(c))}${enc.multa>0?` + multa ${fmtBR(enc.multa)}`:''}${enc.juros>0?` + juros ${fmtBR(enc.juros)}`:''}${somaTarifas(c)>0?` + tarifas ${fmtBR(somaTarifas(c))}`:''}</span></div>`;
+  }
+
   let acordoHtml='';
   if(temAcordo(c)){
     const ps=c.acordo.parcelas, pagas=ps.filter(p=>p.pago).length;
@@ -679,8 +723,7 @@ function abrirDetalhe(id){
         <div class="di"><div class="dl">Telefone</div><div class="dv">${esc(c.tel)||'—'}</div></div>
         <div class="di"><div class="dl">E-mail</div><div class="dv">${esc(c.email)||'—'}</div></div>
       </div>
-      ${enc.total>0?`<div class="encargo">💸 <b>Valor atualizado: ${fmtBR(valorAtualizado(c))}</b><br>
-        <span class="muted">Em aberto ${fmtBR(valorEmAberto(c))} + multa ${fmtBR(enc.multa)} + juros ${fmtBR(enc.juros)} (${dias} dias)</span></div>`:''}
+      ${montanteHtml}
       ${c.obs?`<div style="margin-top:12px;"><div class="dl" style="font-size:11px;color:var(--muted);text-transform:uppercase;">Observações</div><div style="font-size:14px;margin-top:3px;">${esc(c.obs)}</div></div>`:''}
       <div class="flexb" style="margin-top:14px; flex-wrap:wrap;">
         <button class="check ${c.status==='pago'?'on':''}" onclick="togglePago('${c.id}')" title="Marcar pago"></button>
@@ -690,6 +733,7 @@ function abrirDetalhe(id){
     </div>
 
     ${reguaHtml}
+    ${tarifasHtml}
     ${pagHtml}
     ${acordoHtml}
 
@@ -789,9 +833,12 @@ function toggleParcela(clienteId, parcelaId){
 function cobrarWhats(id){
   const c=db.clientes.find(x=>x.id===id); if(!c) return;
   const dias=diasAtraso(c), primeiroNome=(c.nome||'').split(' ')[0];
-  const enc=encargos(c);
-  const valor = enc.total>0 ? valorAtualizado(c) : valorEmAberto(c);
-  const complemento = enc.total>0 ? ` (já com multa e juros de ${dias} dias de atraso)` : '';
+  const enc=encargos(c), tar=somaTarifas(c);
+  const valor = montanteCobrar(c);
+  let complemento='';
+  if(enc.total>0 && tar>0) complemento=` (já com multa, juros e tarifas)`;
+  else if(enc.total>0) complemento=` (já com multa e juros de ${dias} dias de atraso)`;
+  else if(tar>0) complemento=` (já incluídas as tarifas/custas)`;
   const etapa=reguaEtapa(dias);
   let msg;
   if(!etapa){ // em dia / a vencer
@@ -843,6 +890,35 @@ function excluirPagamento(clienteId, pagId){
   save(); render(); abrirDetalhe(clienteId); toast('Pagamento removido');
 }
 
+/* ---------- Tarifas / custas ---------- */
+function abrirTarifa(id){
+  document.getElementById('tClienteId').value=id;
+  document.getElementById('tDesc').value='';
+  document.getElementById('tValor').value='';
+  document.getElementById('tData').value=hoje();
+  document.getElementById('modalTarifa').classList.add('open');
+}
+function salvarTarifa(){
+  const id=document.getElementById('tClienteId').value;
+  const c=db.clientes.find(x=>x.id===id); if(!c) return;
+  const descricao=document.getElementById('tDesc').value.trim();
+  const valor=parseValor(document.getElementById('tValor').value);
+  const data=document.getElementById('tData').value||hoje();
+  if(!descricao){ toast('⚠️ Informe a descrição'); return; }
+  if(valor<=0){ toast('⚠️ Informe o valor'); return; }
+  if(!c.tarifas) c.tarifas=[];
+  c.tarifas.push({ id:uid(), descricao, valor, data });
+  if(!c.ocorrencias) c.ocorrencias=[];
+  c.ocorrencias.unshift({ id:uid(), tipo:'🧾 Outro', data, texto:`Tarifa lançada: ${descricao} (${fmtBR(valor)}).`, proximo:'' });
+  save(); fecharModal('modalTarifa'); render(); abrirDetalhe(id); toast('🧾 Tarifa lançada');
+}
+function excluirTarifa(clienteId, tId){
+  const c=db.clientes.find(x=>x.id===clienteId); if(!c) return;
+  if(!confirm('Remover esta tarifa?')) return;
+  c.tarifas=(c.tarifas||[]).filter(t=>t.id!==tId);
+  save(); render(); abrirDetalhe(clienteId); toast('Tarifa removida');
+}
+
 /* ---------- Config juros/multa ---------- */
 function abrirConfig(){
   const g=cfg();
@@ -878,12 +954,13 @@ function backupImport(ev){
   r.readAsText(file); ev.target.value='';
 }
 function exportarCSV(){
-  const head=['Nome','Tipo','Documento','Telefone','Email','Nota','Valor','Vencimento','Situacao','DiasAtraso','EmAberto','ValorAtualizado','MauPagador','Ocorrencias','Parcelas'];
+  const head=['Nome','Tipo','Documento','Telefone','Email','Nota','Valor','Vencimento','Situacao','DiasAtraso','EmAberto','JurosMulta','Tarifas','TotalCobrar','MauPagador','Ocorrencias','Parcelas'];
   const linhas=db.clientes.map(c=>[
     c.nome, c.tipo, c.doc, c.tel, c.email, c.nota,
     parseValor(c.valor).toFixed(2).replace('.',','), c.venc, c.status,
     diasAtraso(c), valorEmAberto(c).toFixed(2).replace('.',','),
-    valorAtualizado(c).toFixed(2).replace('.',','), c.reincidente?'SIM':'',
+    encargos(c).total.toFixed(2).replace('.',','), somaTarifas(c).toFixed(2).replace('.',','),
+    montanteCobrar(c).toFixed(2).replace('.',','), c.reincidente?'SIM':'',
     (c.ocorrencias||[]).length, temAcordo(c)?c.acordo.parcelas.length+'x':'—'
   ].map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(';'));
   const csv='﻿'+[head.join(';'),...linhas].join('\r\n');
@@ -897,11 +974,12 @@ function baixar(blob, nome){
 function imprimirRelatorio(){
   const inad=db.clientes.filter(c=>c.status!=='pago' && diasAtraso(c)>0).sort((a,b)=>diasAtraso(b)-diasAtraso(a));
   const total=inad.reduce((s,c)=>s+valorEmAberto(c),0);
-  const totalAtu=inad.reduce((s,c)=>s+valorAtualizado(c),0);
+  const totalAtu=inad.reduce((s,c)=>s+montanteCobrar(c),0);
   const linhas=inad.map(c=>`<tr>
     <td>${esc(c.nome)}${c.reincidente?' ⚠️':''}</td><td>${esc(c.doc)||'—'}</td><td>${esc(c.nota)||'—'}</td>
     <td style="text-align:right">${fmtBR(valorEmAberto(c))}</td>
-    <td style="text-align:right">${fmtBR(valorAtualizado(c))}</td>
+    <td style="text-align:right">${fmtBR(somaTarifas(c))}</td>
+    <td style="text-align:right;font-weight:bold">${fmtBR(montanteCobrar(c))}</td>
     <td style="text-align:center">${dataBR(c.venc)}</td>
     <td style="text-align:center;color:#c00;font-weight:bold">${diasAtraso(c)}d</td>
     <td>${esc(c.tel)||'—'}</td></tr>`).join('');
@@ -918,9 +996,9 @@ function imprimirRelatorio(){
     <body>
     <h1>⚡ Relatório de Inadimplentes</h1>
     <div class="sub">Gerado em ${dataBR(hoje())} · ${inad.length} cliente(s) em atraso</div>
-    <table><thead><tr><th>Nome</th><th>CPF/CNPJ</th><th>Nota</th><th>Em aberto</th><th>Atualizado</th><th>Vencimento</th><th>Atraso</th><th>Telefone</th></tr></thead>
-    <tbody>${linhas||'<tr><td colspan=8 style="text-align:center">Nenhum inadimplente 🎉</td></tr>'}</tbody></table>
-    <div class="tot">Total em aberto: ${fmtBR(total)}${totalAtu>total?` · Com juros/multa: ${fmtBR(totalAtu)}`:''}</div>
+    <table><thead><tr><th>Nome</th><th>CPF/CNPJ</th><th>Nota</th><th>Em aberto</th><th>Tarifas</th><th>A cobrar</th><th>Vencimento</th><th>Atraso</th><th>Telefone</th></tr></thead>
+    <tbody>${linhas||'<tr><td colspan=9 style="text-align:center">Nenhum inadimplente 🎉</td></tr>'}</tbody></table>
+    <div class="tot">Total em aberto: ${fmtBR(total)}${totalAtu>total?` · Total a cobrar (c/ juros, multa e tarifas): ${fmtBR(totalAtu)}`:''}</div>
     <button class="noprint" onclick="window.print()" style="margin-top:20px;padding:10px 20px;background:#f59e0b;border:none;border-radius:8px;font-weight:bold;cursor:pointer">🖨️ Imprimir / Salvar PDF</button>
     </body></html>`);
   w.document.close();
