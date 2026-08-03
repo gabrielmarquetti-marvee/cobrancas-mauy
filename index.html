@@ -348,7 +348,8 @@
         <div><label class="fld">Valor (R$)</label><input type="text" id="tValor" inputmode="decimal" placeholder="0,00"></div>
         <div><label class="fld">Data</label><input type="date" id="tData"></div>
       </div>
-      <div class="muted" style="margin-top:8px;">Essas tarifas são somadas ao total a cobrar do cliente (além do valor da nota e de juros/multa, se ativos).</div>
+      <label class="chk"><input type="checkbox" id="tAdiantada"> <span>✅ Já paguei esta tarifa (adiantada por mim)</span></label>
+      <div class="muted" style="margin-top:4px;">A tarifa continua no total a cobrar do cliente — marcar apenas registra que você já desembolsou esse valor.</div>
       <hr class="sep">
       <button class="btn wide" onclick="salvarTarifa()">🧾 Lançar tarifa</button>
     </div>
@@ -427,6 +428,7 @@ function encargos(c){
 function valorAtualizado(c){ return valorEmAberto(c)+encargos(c).total; }
 /* Tarifas / custas extras */
 function somaTarifas(c){ if(c.status==='pago') return 0; return (c.tarifas||[]).reduce((s,t)=>s+parseValor(t.valor),0); }
+function somaTarifasAdiantadas(c){ return (c.tarifas||[]).filter(t=>t.adiantada).reduce((s,t)=>s+parseValor(t.valor),0); }
 /* Montante total a cobrar = saldo em aberto + juros/multa + tarifas */
 function montanteCobrar(c){ return valorAtualizado(c)+somaTarifas(c); }
 /* Régua de cobrança */
@@ -676,9 +678,14 @@ function abrirDetalhe(id){
 
   // Tarifas / custas
   const tfs=(c.tarifas||[]).slice().sort((a,b)=>(b.data+b.id).localeCompare(a.data+a.id));
-  let tarifasHtml=`<div class="section-t">🧾 Tarifas e custas ${somaTarifas(c)>0?`· total ${fmtBR(somaTarifas(c))}`:''}</div>
+  const adiant=somaTarifasAdiantadas(c);
+  let tarifasHtml=`<div class="section-t">🧾 Tarifas e custas ${(c.tarifas||[]).length?`· total ${fmtBR((c.tarifas||[]).reduce((s,t)=>s+parseValor(t.valor),0))}`:''}</div>
+    ${adiant>0?`<div class="muted" style="margin-bottom:8px;">✅ Você já adiantou: <b style="color:var(--green)">${fmtBR(adiant)}</b></div>`:''}
     ${c.status!=='pago'?`<button class="btn wide" onclick="abrirTarifa('${c.id}')">➕ Lançar tarifa / custa</button>`:''}
-    ${tfs.length?`<div style="margin-top:10px;">${tfs.map(t=>`<div class="parc"><span class="pnum">🧾</span><div class="pinfo"><div class="pv">${fmtBR(parseValor(t.valor))}</div><div class="pd">${esc(t.descricao)||'Tarifa'} · ${dataBR(t.data)}</div></div><button class="btn sec tiny" onclick="excluirTarifa('${c.id}','${t.id}')">Remover</button></div>`).join('')}</div>`:''}`;
+    ${tfs.length?`<div style="margin-top:10px;">${tfs.map(t=>`<div class="parc ${t.adiantada?'pago':''}">
+        <button class="check ${t.adiantada?'on':''}" title="Marcar que você já pagou esta tarifa" onclick="toggleTarifaAdiantada('${c.id}','${t.id}')">✓</button>
+        <div class="pinfo"><div class="pv">${fmtBR(parseValor(t.valor))}</div><div class="pd">${esc(t.descricao)||'Tarifa'} · ${dataBR(t.data)}${t.adiantada?' · ✅ adiantada por você':''}</div></div>
+        <button class="btn sec tiny" onclick="excluirTarifa('${c.id}','${t.id}')">Remover</button></div>`).join('')}</div>`:''}`;
 
   // Caixa "total a cobrar" (saldo + juros/multa + tarifas)
   let montanteHtml='';
@@ -896,6 +903,7 @@ function abrirTarifa(id){
   document.getElementById('tDesc').value='';
   document.getElementById('tValor').value='';
   document.getElementById('tData').value=hoje();
+  document.getElementById('tAdiantada').checked=false;
   document.getElementById('modalTarifa').classList.add('open');
 }
 function salvarTarifa(){
@@ -904,13 +912,20 @@ function salvarTarifa(){
   const descricao=document.getElementById('tDesc').value.trim();
   const valor=parseValor(document.getElementById('tValor').value);
   const data=document.getElementById('tData').value||hoje();
+  const adiantada=document.getElementById('tAdiantada').checked;
   if(!descricao){ toast('⚠️ Informe a descrição'); return; }
   if(valor<=0){ toast('⚠️ Informe o valor'); return; }
   if(!c.tarifas) c.tarifas=[];
-  c.tarifas.push({ id:uid(), descricao, valor, data });
+  c.tarifas.push({ id:uid(), descricao, valor, data, adiantada });
   if(!c.ocorrencias) c.ocorrencias=[];
-  c.ocorrencias.unshift({ id:uid(), tipo:'🧾 Outro', data, texto:`Tarifa lançada: ${descricao} (${fmtBR(valor)}).`, proximo:'' });
+  c.ocorrencias.unshift({ id:uid(), tipo:'🧾 Outro', data, texto:`Tarifa lançada: ${descricao} (${fmtBR(valor)})${adiantada?' — adiantada por mim':''}.`, proximo:'' });
   save(); fecharModal('modalTarifa'); render(); abrirDetalhe(id); toast('🧾 Tarifa lançada');
+}
+function toggleTarifaAdiantada(clienteId, tId){
+  const c=db.clientes.find(x=>x.id===clienteId); if(!c) return;
+  const t=(c.tarifas||[]).find(x=>x.id===tId); if(!t) return;
+  t.adiantada=!t.adiantada;
+  save(); render(); abrirDetalhe(clienteId);
 }
 function excluirTarifa(clienteId, tId){
   const c=db.clientes.find(x=>x.id===clienteId); if(!c) return;
@@ -954,12 +969,13 @@ function backupImport(ev){
   r.readAsText(file); ev.target.value='';
 }
 function exportarCSV(){
-  const head=['Nome','Tipo','Documento','Telefone','Email','Nota','Valor','Vencimento','Situacao','DiasAtraso','EmAberto','JurosMulta','Tarifas','TotalCobrar','MauPagador','Ocorrencias','Parcelas'];
+  const head=['Nome','Tipo','Documento','Telefone','Email','Nota','Valor','Vencimento','Situacao','DiasAtraso','EmAberto','JurosMulta','Tarifas','TarifasAdiantadas','TotalCobrar','MauPagador','Ocorrencias','Parcelas'];
   const linhas=db.clientes.map(c=>[
     c.nome, c.tipo, c.doc, c.tel, c.email, c.nota,
     parseValor(c.valor).toFixed(2).replace('.',','), c.venc, c.status,
     diasAtraso(c), valorEmAberto(c).toFixed(2).replace('.',','),
     encargos(c).total.toFixed(2).replace('.',','), somaTarifas(c).toFixed(2).replace('.',','),
+    somaTarifasAdiantadas(c).toFixed(2).replace('.',','),
     montanteCobrar(c).toFixed(2).replace('.',','), c.reincidente?'SIM':'',
     (c.ocorrencias||[]).length, temAcordo(c)?c.acordo.parcelas.length+'x':'—'
   ].map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(';'));
