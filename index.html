@@ -7,6 +7,7 @@
 <title>Cobrança - Gestão de Inadimplentes</title>
 <link rel="manifest" href="manifest.json">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   :root{
@@ -215,11 +216,11 @@
     <button class="btn sec tiny" onclick="exportarCSV()">📊 Exportar CSV</button>
     <button class="btn sec tiny" onclick="imprimirRelatorio()">🖨️ Relatório</button>
     <button class="btn sec tiny" onclick="backupExport()">💾 Backup</button>
-    <button class="btn sec tiny" onclick="document.getElementById('csvFile').click()">📥 Importar planilha</button>
+    <button class="btn sec tiny" onclick="document.getElementById('csvFile').click()">📥 Importar planilha (CSV/Excel)</button>
     <button class="btn sec tiny" onclick="document.getElementById('importFile').click()">📂 Restaurar</button>
     <button class="btn sec tiny" onclick="logout()">🚪 Sair</button>
     <input type="file" id="importFile" accept="application/json" style="display:none" onchange="backupImport(event)">
-    <input type="file" id="csvFile" accept=".csv,text/csv,text/plain" style="display:none" onchange="importarCSV(event)">
+    <input type="file" id="csvFile" accept=".csv,.xlsx,.xls,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none" onchange="importarArquivo(event)">
   </div>
 
   <!-- Painel: cobranças de hoje -->
@@ -1058,8 +1059,16 @@ function parseDataBR(s){
   if(m){ let d=m[1], mo=m[2], y=m[3]; if(y.length===2) y='20'+y; return `${y}-${mo.padStart(2,'0')}-${d.padStart(2,'0')}`; }
   return '';
 }
+function celTexto(v){ return (v==null?'':String(v)).trim(); }
+function valorCelula(v){ if(typeof v==='number') return v; return parseValorImp(v); }
+function dataCelula(v){
+  if(v instanceof Date && !isNaN(v)){
+    return v.getFullYear()+'-'+String(v.getMonth()+1).padStart(2,'0')+'-'+String(v.getDate()).padStart(2,'0');
+  }
+  return parseDataBR(v);
+}
 function classificarContato(v){
-  v=(v||'').trim();
+  v=celTexto(v);
   if(!v) return {tel:'',email:'',resto:''};
   if(v.includes('@')) return {tel:'',email:v,resto:''};
   if(v.replace(/\D/g,'').length>=8) return {tel:v,email:'',resto:''};
@@ -1078,13 +1087,31 @@ function parseCSV(text){
     out.push(cur); return out.map(s=>s.trim()); };
   return { header:parseLine(linhas[0]), rows:linhas.slice(1).map(parseLine) };
 }
-function importarCSV(ev){
+function importarArquivo(ev){
   const file=ev.target.files[0]; if(!file) return;
+  const nome=(file.name||'').toLowerCase();
+  const ehExcel = nome.endsWith('.xlsx')||nome.endsWith('.xls');
   const r=new FileReader();
   r.onload=()=>{
     try{
-      const {header,rows}=parseCSV(r.result);
+      let header, rows;
+      if(ehExcel){
+        if(!window.XLSX){ toast('⚠️ Leitor de Excel não carregou (sem conexão?)'); return; }
+        const wb=XLSX.read(new Uint8Array(r.result),{type:'array', cellDates:true});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        const aoa=XLSX.utils.sheet_to_json(ws,{header:1, raw:true, defval:'', cellDates:true}).filter(rw=>rw.some(c=>String(c).trim().length));
+        header=aoa[0]||[]; rows=aoa.slice(1);
+      }else{
+        const parsed=parseCSV(r.result); header=parsed.header; rows=parsed.rows;
+      }
       if(!header.length || !rows.length){ toast('⚠️ Planilha vazia ou inválida'); return; }
+      processarPlanilha(header, rows);
+    }catch(e){ console.warn(e); toast('⚠️ Não consegui ler o arquivo'); }
+  };
+  if(ehExcel) r.readAsArrayBuffer(file); else r.readAsText(file,'UTF-8');
+  ev.target.value='';
+}
+function processarPlanilha(header, rows){
       const iNome=acharCol(header,['pagador','nome','cliente','razao']);
       const iSeu=acharCol(header,['seu numero','seu num','seu n']);
       const iNosso=acharCol(header,['nosso numero','nosso num','nosso n']);
@@ -1095,21 +1122,21 @@ function importarCSV(ev){
       const iDoc=acharCol(header,['cnpj','cpf','documento']);
       const clientes=[];
       rows.forEach(row=>{
-        const nome=(iNome>-1?row[iNome]:'').trim();
+        const nome=celTexto(iNome>-1?row[iNome]:'');
         if(!nome) return; // linha sem pagador é ignorada
         const cont=classificarContato(iContato>-1?row[iContato]:'');
-        const doc=(iDoc>-1?row[iDoc]:'').trim();
+        const doc=celTexto(iDoc>-1?row[iDoc]:'');
         const tipo = doc.replace(/\D/g,'').length>11 ? 'CNPJ' : 'CPF';
         const obsParts=[];
-        if(iObs>-1 && row[iObs]) obsParts.push(row[iObs].trim());
-        if(iNosso>-1 && row[iNosso]) obsParts.push('Nosso Número: '+row[iNosso].trim());
+        if(iObs>-1 && celTexto(row[iObs])) obsParts.push(celTexto(row[iObs]));
+        if(iNosso>-1 && celTexto(row[iNosso])) obsParts.push('Nosso Número: '+celTexto(row[iNosso]));
         if(cont.resto) obsParts.push('Contato: '+cont.resto);
         clientes.push({
           id:uid(), nome, tipo, doc,
           tel:cont.tel, email:cont.email,
-          nota:(iSeu>-1?row[iSeu]:(iNosso>-1?row[iNosso]:'')).trim(),
-          valor:parseValorImp(iValor>-1?row[iValor]:'').toFixed(2).replace('.',','),
-          venc:parseDataBR(iVenc>-1?row[iVenc]:''),
+          nota:celTexto(iSeu>-1?row[iSeu]:(iNosso>-1?row[iNosso]:'')),
+          valor:valorCelula(iValor>-1?row[iValor]:0).toFixed(2).replace('.',','),
+          venc:dataCelula(iVenc>-1?row[iVenc]:''),
           status:'aberto', obs:obsParts.join(' · '),
           reincidente:false, proximoContato:'', ocorrencias:[], acordo:null, pagamentos:[], tarifas:[], criadoEm:hoje()
         });
@@ -1127,9 +1154,6 @@ function importarCSV(ev){
         </div></div>`).join('') + (clientes.length>6?`<div class="muted" style="margin-top:6px;">…e mais ${clientes.length-6}.</div>`:'');
       document.getElementById('impAviso').innerHTML=`Total importado: <b style="color:var(--txt)">${fmtBR(total)}</b>.<br>Os clientes serão <b>adicionados</b> aos existentes (não apaga o que já está no sistema).`;
       document.getElementById('modalImport').classList.add('open');
-    }catch(e){ console.warn(e); toast('⚠️ Não consegui ler o arquivo'); }
-  };
-  r.readAsText(file,'UTF-8'); ev.target.value='';
 }
 function confirmarImport(){
   if(!_importPend || !_importPend.length){ fecharModal('modalImport'); return; }
