@@ -576,7 +576,12 @@ function atualizarSelBar(){
   if(!selMode){ bar.classList.remove('show'); return; }
   bar.classList.add('show');
   const todos = selecionados.size===_visiveis.length && _visiveis.length;
-  bar.innerHTML=`<span class="sc">${selecionados.size} selecionado(s)</span>
+  const sel = db.clientes.filter(c=>selecionados.has(c.id));
+  const total = sel.reduce((s,c)=>s+montanteCobrar(c),0);
+  bar.innerHTML=`<div class="sc">
+      <div>${selecionados.size} selecionado(s)</div>
+      <div style="font-size:16px; color:var(--brand2)">${fmtBR(total)}</div>
+    </div>
     <div class="flexb">
       <button class="btn sec sm" onclick="selecionarTodos()">${todos?'Limpar':'Todos'}</button>
       <button class="btn sm" onclick="abrirOccMulti()">📌 Ocorrência</button>
