@@ -60,6 +60,11 @@
   .card.atraso{ border-left:4px solid var(--red); }
   .card.critico{ border-left:4px solid var(--red); background:linear-gradient(90deg,rgba(189,90,72,.1),var(--panel)); }
   .card.negoc{ border-left:4px solid var(--yellow); }
+  .card.sel{ border-color:var(--brand); box-shadow:inset 0 0 0 2px var(--brand); }
+  .selbar{ position:fixed; bottom:0; left:0; right:0; z-index:40; background:var(--panel); border-top:1px solid var(--line); padding:12px 16px; display:none; align-items:center; justify-content:space-between; gap:10px; box-shadow:0 -3px 14px rgba(60,50,25,.2); }
+  .selbar.show{ display:flex; }
+  .selbar .sc{ font-weight:800; font-size:14px; white-space:nowrap; }
+  body.selmode .fab{ display:none; }
   .card .top{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
   .card .nome{ font-size:16px; font-weight:700; }
   .card .doc{ font-size:12px; color:var(--muted); margin-top:2px; }
@@ -211,6 +216,7 @@
   </div>
 
   <div class="tools">
+    <button class="btn sec tiny" onclick="toggleSelMode()" id="btnSel">☑️ Selecionar</button>
     <button class="btn sec tiny" onclick="abrirConfig()">⚙️ Juros/Multa</button>
     <button class="btn sec tiny" onclick="exportarCSV()">📊 Exportar CSV</button>
     <button class="btn sec tiny" onclick="imprimirRelatorio()">🖨️ Relatório</button>
@@ -429,6 +435,8 @@
   </div>
 </div>
 
+<div class="selbar" id="selBar"></div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -439,6 +447,7 @@ let sb=null;
 try{ if(window.supabase) sb=window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY); }catch(e){ console.warn('supabase init',e); }
 let authed=false, myToken=null, _pushTimer=null;
 let filtro='todos';
+let selMode=false, selecionados=new Set(), _visiveis=[];
 
 function defaultDb(){ return { clientes:[], config:{aplicar:false, multaPct:2, jurosMesPct:1, cadenciaDias:2} }; }
 function cadencia(){ const n=parseInt(cfg().cadenciaDias); return n>0?n:2; }
@@ -557,6 +566,34 @@ async function buscarCNPJ(){
 /* ---------- Filtros ---------- */
 function setFiltro(f){ filtro=f; document.querySelectorAll('.chip').forEach(c=>c.classList.toggle('active', c.dataset.f===f)); render(); }
 
+/* ---------- Seleção múltipla ---------- */
+function cardClick(id){ if(selMode) toggleSel(id); else abrirDetalhe(id); }
+function toggleSel(id){ if(selecionados.has(id)) selecionados.delete(id); else selecionados.add(id); render(); atualizarSelBar(); }
+function toggleSelMode(){ selMode?sairSelMode():entrarSelMode(); }
+function entrarSelMode(){ selMode=true; selecionados.clear(); document.body.classList.add('selmode'); document.getElementById('btnSel').textContent='✖️ Cancelar seleção'; render(); atualizarSelBar(); }
+function sairSelMode(){ selMode=false; selecionados.clear(); document.body.classList.remove('selmode'); document.getElementById('btnSel').textContent='☑️ Selecionar'; render(); atualizarSelBar(); }
+function selecionarTodos(){ if(selecionados.size===_visiveis.length){ selecionados.clear(); } else { _visiveis.forEach(id=>selecionados.add(id)); } render(); atualizarSelBar(); }
+function atualizarSelBar(){
+  const bar=document.getElementById('selBar');
+  if(!selMode){ bar.classList.remove('show'); return; }
+  bar.classList.add('show');
+  const todos = selecionados.size===_visiveis.length && _visiveis.length;
+  bar.innerHTML=`<span class="sc">${selecionados.size} selecionado(s)</span>
+    <div class="flexb">
+      <button class="btn sec sm" onclick="selecionarTodos()">${todos?'Limpar':'Todos'}</button>
+      <button class="btn sm" onclick="abrirOccMulti()">📌 Ocorrência</button>
+    </div>`;
+}
+function abrirOccMulti(){
+  if(!selecionados.size){ toast('Selecione ao menos 1 cliente'); return; }
+  document.getElementById('oClienteId').value='__multi__';
+  document.getElementById('oTipo').value='📞 Ligação';
+  document.getElementById('oData').value=hoje();
+  document.getElementById('oTexto').value='';
+  document.getElementById('oProximo').value='';
+  document.getElementById('modalOcc').classList.add('open');
+}
+
 /* ---------- Render lista + KPIs ---------- */
 function render(){
   const q=document.getElementById('busca').value.toLowerCase().trim();
@@ -604,6 +641,7 @@ function render(){
     return diasAtraso(b)-diasAtraso(a);
   });
 
+  _visiveis=arr.map(c=>c.id);
   const lista=document.getElementById('lista');
   if(!arr.length){ lista.innerHTML=`<div class="empty"><div class="ico">📋</div><div>Nenhum cadastro encontrado.<br>Toque no + para adicionar o primeiro cliente.</div></div>`; return; }
 
@@ -618,14 +656,15 @@ function render(){
     const aberto=valorEmAberto(c);
     const extra = !pago && montanteCobrar(c) > aberto+0.005;
     const acordoTxt = temAcordo(c) ? ` · ${c.acordo.parcelas.filter(p=>p.pago).length}/${c.acordo.parcelas.length} parc.` : '';
-    return `<div class="card ${cardcls}" onclick="abrirDetalhe('${c.id}')">
+    const selecionado = selMode && selecionados.has(c.id);
+    return `<div class="card ${cardcls} ${selecionado?'sel':''}" onclick="cardClick('${c.id}')">
       <div class="top">
         <div>
           <div class="nome">${esc(c.nome)}</div>
           <div class="doc">${c.tipo}: ${esc(c.doc)||'—'} · Nota ${esc(c.nota)||'—'}${acordoTxt}</div>
         </div>
         <div class="rightcol">
-          <button class="check ${pago?'on':''}" title="Marcar como pago" onclick="event.stopPropagation(); togglePago('${c.id}')">✓</button>
+          <button class="check ${selMode?(selecionado?'on':''):(pago?'on':'')}" title="${selMode?'Selecionar':'Marcar como pago'}" onclick="event.stopPropagation(); ${selMode?`toggleSel('${c.id}')`:`togglePago('${c.id}')`}">✓</button>
           <span class="badge ${bcls}">${badge}</span>
         </div>
       </div>
@@ -846,17 +885,23 @@ function abrirOcc(clienteId){
 }
 function salvarOcorrencia(){
   const id=document.getElementById('oClienteId').value;
-  const c=db.clientes.find(x=>x.id===id); if(!c) return;
   const tipo=document.getElementById('oTipo').value;
   const data=document.getElementById('oData').value||hoje();
   const texto=document.getElementById('oTexto').value.trim();
   const proximo=document.getElementById('oProximo').value;
-  if(!c.ocorrencias) c.ocorrencias=[];
-  c.ocorrencias.unshift({ id:uid(), tipo, data, texto, proximo });
-  if(proximo) c.proximoContato=proximo;
-  if(tipo.includes('Pagamento recebido')) c.status='pago';
-  else if(tipo.includes('Negociação')||tipo.includes('Promessa')) c.status='negociando';
-  save(); fecharModal('modalOcc'); render(); abrirDetalhe(id); toast('✔️ Ocorrência registrada');
+  const multi = id==='__multi__';
+  const alvos = multi ? db.clientes.filter(c=>selecionados.has(c.id)) : [db.clientes.find(x=>x.id===id)].filter(Boolean);
+  if(!alvos.length) return;
+  alvos.forEach(c=>{
+    if(!c.ocorrencias) c.ocorrencias=[];
+    c.ocorrencias.unshift({ id:uid(), tipo, data, texto, proximo });
+    if(proximo) c.proximoContato=proximo;
+    if(tipo.includes('Pagamento recebido')) c.status='pago';
+    else if(tipo.includes('Negociação')||tipo.includes('Promessa')) c.status='negociando';
+  });
+  save(); fecharModal('modalOcc');
+  if(multi){ const n=alvos.length; sairSelMode(); render(); toast(`✔️ Ocorrência registrada em ${n} cliente(s)`); }
+  else{ render(); abrirDetalhe(id); toast('✔️ Ocorrência registrada'); }
 }
 
 /* ---------- Acordo / parcelamento ---------- */
