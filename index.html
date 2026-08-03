@@ -110,6 +110,37 @@
   .progress{ background:var(--panel2); border-radius:20px; height:10px; overflow:hidden; margin:6px 0 10px; }
   .progress > i{ display:block; height:100%; background:var(--green); }
 
+  /* Agenda de hoje */
+  .agenda{ background:var(--panel); border:1px solid var(--line); border-left:4px solid var(--brand); border-radius:14px; padding:14px; margin-bottom:14px; }
+  .agenda h3{ font-size:14px; display:flex; align-items:center; gap:7px; margin-bottom:2px; }
+  .agenda .ag-item{ display:flex; align-items:center; gap:8px; padding:9px 0; border-top:1px solid var(--line); }
+  .agenda .ag-item:first-of-type{ border-top:none; }
+  .agenda .ag-nome{ flex:1; font-size:14px; font-weight:600; cursor:pointer; }
+  .agenda .ag-tag{ font-size:10px; padding:2px 7px; border-radius:6px; background:var(--panel2); color:var(--muted); white-space:nowrap; }
+  .agenda .ag-tag.late{ background:rgba(239,68,68,.15); color:#fca5a5; }
+
+  /* Faixas de atraso (aging) */
+  .aging{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:14px; }
+  .aging .ag{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:11px 10px; text-align:center; }
+  .aging .ag .v{ font-size:15px; font-weight:800; }
+  .aging .ag .l{ font-size:10px; color:var(--muted); text-transform:uppercase; margin-top:2px; }
+  .aging .ag.a1{ border-top:3px solid var(--yellow); }
+  .aging .ag.a2{ border-top:3px solid #fb923c; }
+  .aging .ag.a3{ border-top:3px solid var(--red); }
+
+  .b-mau{ background:rgba(239,68,68,.2); color:#fca5a5; border:1px solid rgba(239,68,68,.4); }
+
+  /* Régua de cobrança */
+  .regua{ border:1px solid var(--line); border-radius:12px; padding:12px; margin-top:8px; }
+  .regua .rt{ font-size:12px; color:var(--muted); }
+  .regua .rn{ font-size:15px; font-weight:700; margin:2px 0 8px; }
+  .regua .steps{ display:flex; gap:5px; margin-bottom:10px; }
+  .regua .steps > i{ flex:1; height:6px; border-radius:3px; background:var(--panel2); }
+  .encargo{ background:rgba(245,158,11,.1); border:1px solid rgba(245,158,11,.3); border-radius:10px; padding:10px 12px; margin-top:10px; font-size:13px; }
+  .encargo b{ color:var(--brand2); }
+  .chk{ display:flex; align-items:center; gap:10px; margin:12px 0; cursor:pointer; }
+  .chk input{ width:20px; height:20px; }
+
   /* Ocorrências timeline */
   .occ{ position:relative; padding-left:24px; margin-bottom:14px; }
   .occ::before{ content:''; position:absolute; left:6px; top:4px; bottom:-14px; width:2px; background:var(--line); }
@@ -154,6 +185,7 @@
   </div>
 
   <div class="tools">
+    <button class="btn sec tiny" onclick="abrirConfig()">⚙️ Juros/Multa</button>
     <button class="btn sec tiny" onclick="exportarCSV()">📊 Exportar CSV</button>
     <button class="btn sec tiny" onclick="imprimirRelatorio()">🖨️ Relatório</button>
     <button class="btn sec tiny" onclick="backupExport()">💾 Backup</button>
@@ -161,10 +193,17 @@
     <input type="file" id="importFile" accept="application/json" style="display:none" onchange="backupImport(event)">
   </div>
 
+  <!-- Painel: cobranças de hoje -->
+  <div id="agenda"></div>
+
+  <!-- Faixas de atraso -->
+  <div class="aging" id="aging"></div>
+
   <div class="chips" id="chips">
     <div class="chip active" data-f="todos" onclick="setFiltro('todos')">Todos</div>
     <div class="chip" data-f="atraso" onclick="setFiltro('atraso')">Em atraso</div>
     <div class="chip" data-f="critico" onclick="setFiltro('critico')">Crítico (+30d)</div>
+    <div class="chip" data-f="mau" onclick="setFiltro('mau')">Mau pagador</div>
     <div class="chip" data-f="negociando" onclick="setFiltro('negociando')">Negociando</div>
     <div class="chip" data-f="hoje" onclick="setFiltro('hoje')">Contato hoje</div>
     <div class="chip" data-f="pago" onclick="setFiltro('pago')">Pagos</div>
@@ -207,6 +246,7 @@
       </div>
       <label class="fld">Observações gerais</label>
       <textarea id="fObs" rows="2" placeholder="Anotações sobre o cliente..."></textarea>
+      <label class="chk"><input type="checkbox" id="fReincidente"> <span>⚠️ Marcar como <b>mau pagador</b> (já atrasou outras vezes)</span></label>
       <hr class="sep">
       <button class="btn wide" onclick="salvarCliente()">💾 Salvar cadastro</button>
       <button class="btn sec wide danger" id="btnExcluir" style="margin-top:10px; display:none;" onclick="excluirCliente()">🗑️ Excluir cadastro</button>
@@ -270,6 +310,41 @@
   </div>
 </div>
 
+<!-- MODAL: Pagamento parcial -->
+<div class="modal" id="modalPag">
+  <div class="sheet">
+    <header><h1>Registrar pagamento</h1><button class="x" onclick="fecharModal('modalPag')">×</button></header>
+    <div class="body">
+      <input type="hidden" id="pClienteId">
+      <div class="muted" id="pSaldo" style="margin-bottom:6px;"></div>
+      <label class="fld">Valor recebido (R$)</label>
+      <input type="text" id="pValor" inputmode="decimal" placeholder="0,00">
+      <label class="fld">Data do pagamento</label>
+      <input type="date" id="pData">
+      <div class="muted" style="margin-top:8px;">💡 Pode registrar valor parcial. O saldo devedor é atualizado automaticamente; quando zerar, o cliente vira "pago".</div>
+      <hr class="sep">
+      <button class="btn wide" onclick="salvarPagamento()">💰 Registrar pagamento</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Config juros/multa -->
+<div class="modal" id="modalConfig">
+  <div class="sheet">
+    <header><h1>Juros e multa por atraso</h1><button class="x" onclick="fecharModal('modalConfig')">×</button></header>
+    <div class="body">
+      <label class="chk"><input type="checkbox" id="cAplicar"> <span>Aplicar juros e multa nos débitos em atraso</span></label>
+      <div class="row2">
+        <div><label class="fld">Multa (%) — única</label><input type="text" id="cMulta" inputmode="decimal" placeholder="2"></div>
+        <div><label class="fld">Juros (% ao mês)</label><input type="text" id="cJuros" inputmode="decimal" placeholder="1"></div>
+      </div>
+      <div class="muted" style="margin-top:10px;">A multa é cobrada uma vez sobre o valor em aberto. Os juros são proporcionais aos dias de atraso (juros simples). Padrão comum no comércio: multa 2% + juros 1% ao mês.</div>
+      <hr class="sep">
+      <button class="btn wide" onclick="salvarConfig()">💾 Salvar configuração</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -289,17 +364,19 @@ function dataBR(iso){ if(!iso) return '—'; const [a,m,d]=iso.split('-'); retur
 function esc(s){ return (s||'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
 function diffDias(iso){ return Math.floor((new Date(hoje())-new Date(iso))/(1000*60*60*24)); }
 
-/* ---------- lógica financeira (considera acordo) ---------- */
+/* ---------- lógica financeira (considera acordo, pagamentos e encargos) ---------- */
+function cfg(){ if(!db.config) db.config={aplicar:false, multaPct:2, jurosMesPct:1}; return db.config; }
 function temAcordo(c){ return c.acordo && c.acordo.parcelas && c.acordo.parcelas.length; }
+function somaPagamentos(c){ return (c.pagamentos||[]).reduce((s,p)=>s+parseValor(p.valor),0); }
 function valorEmAberto(c){
   if(c.status==='pago') return 0;
   if(temAcordo(c)) return c.acordo.parcelas.filter(p=>!p.pago).reduce((s,p)=>s+parseValor(p.valor),0);
-  return parseValor(c.valor);
+  return Math.max(0, parseValor(c.valor)-somaPagamentos(c));
 }
 function valorPago(c){
   if(c.status==='pago') return parseValor(c.valor);
   if(temAcordo(c)) return c.acordo.parcelas.filter(p=>p.pago).reduce((s,p)=>s+parseValor(p.valor),0);
-  return 0;
+  return somaPagamentos(c);
 }
 function diasAtraso(c){
   if(c.status==='pago') return 0;
@@ -310,6 +387,24 @@ function diasAtraso(c){
   }
   if(!c.venc) return 0;
   const d=diffDias(c.venc); return d>0?d:0;
+}
+/* Juros e multa */
+function encargos(c){
+  const g=cfg(), dias=diasAtraso(c);
+  if(!g.aplicar || dias<=0 || c.status==='pago') return {multa:0, juros:0, total:0};
+  const base=valorEmAberto(c);
+  const multa=base*(parseFloat(g.multaPct)||0)/100;
+  const juros=base*((parseFloat(g.jurosMesPct)||0)/100)*(dias/30);
+  return {multa, juros, total:multa+juros};
+}
+function valorAtualizado(c){ return valorEmAberto(c)+encargos(c).total; }
+/* Régua de cobrança */
+function reguaEtapa(dias){
+  if(dias<=0) return null;
+  if(dias<=7)  return {nivel:1, nome:'Lembrete amigável'};
+  if(dias<=20) return {nivel:2, nome:'Cobrança firme'};
+  if(dias<=40) return {nivel:3, nome:'Cobrança formal'};
+  return {nivel:4, nome:'Aviso de negativação'};
 }
 
 /* ---------- Máscara documento ---------- */
@@ -355,19 +450,34 @@ function setFiltro(f){ filtro=f; document.querySelectorAll('.chip').forEach(c=>c
 /* ---------- Render lista + KPIs ---------- */
 function render(){
   const q=document.getElementById('busca').value.toLowerCase().trim();
-  let totalAtraso=0, qtdInad=0, recebido=0;
+  let totalAtraso=0, qtdInad=0, recebido=0, f1=0,f2=0,f3=0;
   db.clientes.forEach(c=>{
     recebido += valorPago(c);
-    if(c.status!=='pago' && diasAtraso(c)>0){ totalAtraso+=valorEmAberto(c); qtdInad++; }
+    const dias=diasAtraso(c);
+    if(c.status!=='pago' && dias>0){
+      const ab=valorEmAberto(c);
+      totalAtraso+=ab; qtdInad++;
+      if(dias<=30) f1+=ab; else if(dias<=60) f2+=ab; else f3+=ab;
+    }
   });
   document.getElementById('kpiAtraso').textContent=fmtBRk(totalAtraso);
   document.getElementById('kpiQtd').textContent=qtdInad;
   document.getElementById('kpiRecebido').textContent=fmtBRk(recebido);
 
+  // Faixas de atraso
+  document.getElementById('aging').innerHTML=`
+    <div class="ag a1"><div class="v">${fmtBRk(f1)}</div><div class="l">1–30 dias</div></div>
+    <div class="ag a2"><div class="v">${fmtBRk(f2)}</div><div class="l">31–60 dias</div></div>
+    <div class="ag a3"><div class="v">${fmtBRk(f3)}</div><div class="l">60+ dias</div></div>`;
+
+  // Painel: cobranças de hoje
+  renderAgenda();
+
   let arr=db.clientes.slice().filter(c=>{
     const dias=diasAtraso(c);
     if(filtro==='atraso') return dias>0 && c.status!=='pago';
     if(filtro==='critico') return dias>30 && c.status!=='pago';
+    if(filtro==='mau') return !!c.reincidente;
     if(filtro==='negociando') return c.status==='negociando';
     if(filtro==='pago') return c.status==='pago';
     if(filtro==='hoje') return c.proximoContato===hoje();
@@ -392,11 +502,12 @@ function render(){
     else if(dias>0){ badge=dias+' dias'; bcls='b-atraso'; cardcls='atraso'; }
     else { badge='Em dia'; bcls='b-dia'; }
     const aberto=valorEmAberto(c);
+    const enc=encargos(c);
     const acordoTxt = temAcordo(c) ? ` · ${c.acordo.parcelas.filter(p=>p.pago).length}/${c.acordo.parcelas.length} parc.` : '';
     return `<div class="card ${cardcls}" onclick="abrirDetalhe('${c.id}')">
       <div class="top">
         <div>
-          <div class="nome">${esc(c.nome)}</div>
+          <div class="nome">${esc(c.nome)} ${c.reincidente?'<span class="badge b-mau">⚠️ Mau pagador</span>':''}</div>
           <div class="doc">${c.tipo}: ${esc(c.doc)||'—'} · Nota ${esc(c.nota)||'—'}${acordoTxt}</div>
         </div>
         <div class="rightcol">
@@ -409,9 +520,32 @@ function render(){
         <div class="m"><div class="ml">Vencimento</div><div class="mv">${dataBR(c.venc)}</div></div>
         <div class="m"><div class="ml">Ocorrências</div><div class="mv">${(c.ocorrencias||[]).length}</div></div>
       </div>
+      ${enc.total>0 ? `<div class="prox" style="color:var(--brand2)">💸 Com juros/multa: ${fmtBR(valorAtualizado(c))}</div>`:''}
       ${c.proximoContato && !pago ? `<div class="prox">📅 Próximo contato: ${dataBR(c.proximoContato)}</div>`:''}
     </div>`;
   }).join('');
+}
+
+/* Painel: cobranças de hoje */
+function renderAgenda(){
+  const h=hoje();
+  const agendados = db.clientes.filter(c=>c.status!=='pago' && c.proximoContato===h);
+  const atrasadosProm = db.clientes.filter(c=>c.status!=='pago' && c.proximoContato && c.proximoContato<h);
+  const recemVenc = db.clientes.filter(c=>c.status!=='pago' && !c.proximoContato && diasAtraso(c)>=1 && diasAtraso(c)<=3);
+  const el=document.getElementById('agenda');
+  const total=agendados.length+atrasadosProm.length+recemVenc.length;
+  if(!total){ el.innerHTML=''; return; }
+  const item=(c,tag,late)=>`<div class="ag-item">
+      <span class="ag-nome" onclick="abrirDetalhe('${c.id}')">${esc(c.nome)}</span>
+      <span class="ag-tag ${late?'late':''}">${tag}</span>
+      ${c.tel?`<button class="btn wa tiny" onclick="cobrarWhats('${c.id}')">💬</button>`:''}
+    </div>`;
+  el.innerHTML=`<div class="agenda">
+    <h3>📅 Cobranças de hoje <span class="ag-tag" style="margin-left:auto">${total}</span></h3>
+    ${atrasadosProm.map(c=>item(c,'⚠️ contato atrasado',true)).join('')}
+    ${agendados.map(c=>item(c,'agendado hoje',false)).join('')}
+    ${recemVenc.map(c=>item(c,`venceu há ${diasAtraso(c)}d`,false)).join('')}
+  </div>`;
 }
 
 /* ---------- Check rápido de pago ---------- */
@@ -445,10 +579,12 @@ function abrirForm(id){
     document.getElementById('fEmail').value=c.email||''; document.getElementById('fNota').value=c.nota||'';
     document.getElementById('fValor').value=c.valor||''; document.getElementById('fVenc').value=c.venc||'';
     document.getElementById('fStatus').value=c.status||'aberto'; document.getElementById('fObs').value=c.obs||'';
+    document.getElementById('fReincidente').checked=!!c.reincidente;
   }else{
     document.getElementById('formTitulo').textContent='Novo cadastro';
     ['fId','fNome','fDoc','fTel','fEmail','fNota','fValor','fVenc','fObs'].forEach(i=>document.getElementById(i).value='');
     document.getElementById('fTipo').value='CPF'; document.getElementById('fStatus').value='aberto';
+    document.getElementById('fReincidente').checked=false;
   }
   document.getElementById('btnCNPJ').style.display = document.getElementById('fTipo').value==='CNPJ' ? 'inline-flex' : 'none';
   f.classList.add('open');
@@ -465,9 +601,9 @@ function salvarCliente(){
     tipo:document.getElementById('fTipo').value, doc:document.getElementById('fDoc').value.trim(),
     tel:document.getElementById('fTel').value.trim(), email:document.getElementById('fEmail').value.trim(),
     venc:document.getElementById('fVenc').value, status:document.getElementById('fStatus').value,
-    obs:document.getElementById('fObs').value.trim() };
+    obs:document.getElementById('fObs').value.trim(), reincidente:document.getElementById('fReincidente').checked };
   if(id){ Object.assign(db.clientes.find(x=>x.id===id), dados); }
-  else{ db.clientes.push({ id:uid(), ...dados, proximoContato:'', ocorrencias:[], acordo:null, criadoEm:hoje() }); }
+  else{ db.clientes.push({ id:uid(), ...dados, proximoContato:'', ocorrencias:[], acordo:null, pagamentos:[], criadoEm:hoje() }); }
   save(); render(); fecharModal('modalForm'); toast('✅ Cadastro salvo');
 }
 function excluirCliente(){
@@ -483,6 +619,29 @@ function abrirDetalhe(id){
   const dias=diasAtraso(c);
   const occs=(c.ocorrencias||[]).slice().sort((a,b)=> (b.data+b.id).localeCompare(a.data+a.id));
   let statusTxt = c.status==='pago'?'✅ Pago': c.status==='negociando'?'🤝 Negociando': dias>0?`🔴 ${dias} dias em atraso`:'🟢 Em dia';
+  const enc=encargos(c);
+
+  // Régua de cobrança
+  const etapa=reguaEtapa(dias);
+  let reguaHtml='';
+  if(etapa && c.status!=='pago'){
+    reguaHtml=`<div class="section-t">📩 Régua de cobrança</div>
+      <div class="regua">
+        <div class="rt">Etapa recomendada agora (${dias} dias de atraso):</div>
+        <div class="rn">${etapa.nivel}. ${etapa.nome}</div>
+        <div class="steps">${[1,2,3,4].map(n=>`<i style="background:${n<=etapa.nivel?'var(--brand)':'var(--panel2)'}"></i>`).join('')}</div>
+        ${c.tel?`<button class="btn wa wide sm" onclick="cobrarWhats('${c.id}')">💬 Enviar cobrança (${etapa.nome})</button>`:'<div class="muted">Cadastre um telefone para enviar cobrança por WhatsApp.</div>'}
+      </div>`;
+  }
+
+  // Pagamento parcial (quando não há acordo)
+  let pagHtml='';
+  if(!temAcordo(c)){
+    const pgs=(c.pagamentos||[]).slice().sort((a,b)=>(b.data+b.id).localeCompare(a.data+a.id));
+    pagHtml=`<div class="section-t">💰 Pagamentos ${c.status!=='pago'?`· saldo ${fmtBR(valorEmAberto(c))}`:''}</div>
+      ${c.status!=='pago'?`<button class="btn wide" onclick="abrirPag('${c.id}')">➕ Registrar pagamento (total ou parcial)</button>`:''}
+      ${pgs.length?`<div style="margin-top:10px;">${pgs.map(p=>`<div class="parc pago"><span class="pnum">✓</span><div class="pinfo"><div class="pv">${fmtBR(parseValor(p.valor))}</div><div class="pd">Recebido em ${dataBR(p.data)}</div></div><button class="btn sec tiny" onclick="excluirPagamento('${c.id}','${p.id}')">Remover</button></div>`).join('')}</div>`:''}`;
+  }
 
   let acordoHtml='';
   if(temAcordo(c)){
@@ -509,7 +668,7 @@ function abrirDetalhe(id){
 
   document.getElementById('detBody').innerHTML=`
     <div class="det-head">
-      <div class="nome">${esc(c.nome)}</div>
+      <div class="nome">${esc(c.nome)} ${c.reincidente?'<span class="badge b-mau">⚠️ Mau pagador</span>':''}</div>
       <div class="muted" style="margin-top:4px;">${c.tipo}: ${esc(c.doc)||'—'}</div>
       <div style="margin-top:8px; font-weight:700; color:${dias>0&&c.status!=='pago'?'var(--red)':'var(--green)'}">${statusTxt}</div>
       <div class="det-grid">
@@ -520,6 +679,8 @@ function abrirDetalhe(id){
         <div class="di"><div class="dl">Telefone</div><div class="dv">${esc(c.tel)||'—'}</div></div>
         <div class="di"><div class="dl">E-mail</div><div class="dv">${esc(c.email)||'—'}</div></div>
       </div>
+      ${enc.total>0?`<div class="encargo">💸 <b>Valor atualizado: ${fmtBR(valorAtualizado(c))}</b><br>
+        <span class="muted">Em aberto ${fmtBR(valorEmAberto(c))} + multa ${fmtBR(enc.multa)} + juros ${fmtBR(enc.juros)} (${dias} dias)</span></div>`:''}
       ${c.obs?`<div style="margin-top:12px;"><div class="dl" style="font-size:11px;color:var(--muted);text-transform:uppercase;">Observações</div><div style="font-size:14px;margin-top:3px;">${esc(c.obs)}</div></div>`:''}
       <div class="flexb" style="margin-top:14px; flex-wrap:wrap;">
         <button class="check ${c.status==='pago'?'on':''}" onclick="togglePago('${c.id}')" title="Marcar pago"></button>
@@ -528,6 +689,8 @@ function abrirDetalhe(id){
       </div>
     </div>
 
+    ${reguaHtml}
+    ${pagHtml}
     ${acordoHtml}
 
     <div class="section-t">📌 Histórico de ocorrências (${occs.length})</div>
@@ -622,20 +785,79 @@ function toggleParcela(clienteId, parcelaId){
   save(); render(); abrirDetalhe(clienteId);
 }
 
-/* ---------- WhatsApp ---------- */
+/* ---------- WhatsApp (régua de cobrança + valor atualizado) ---------- */
 function cobrarWhats(id){
   const c=db.clientes.find(x=>x.id===id); if(!c) return;
   const dias=diasAtraso(c), primeiroNome=(c.nome||'').split(' ')[0];
-  const aberto=valorEmAberto(c);
+  const enc=encargos(c);
+  const valor = enc.total>0 ? valorAtualizado(c) : valorEmAberto(c);
+  const complemento = enc.total>0 ? ` (já com multa e juros de ${dias} dias de atraso)` : '';
+  const etapa=reguaEtapa(dias);
   let msg;
-  if(dias>30) msg=`Olá, ${primeiroNome}. Consta em nosso sistema o débito da nota ${c.nota} no valor de ${fmtBR(aberto)}, vencida em ${dataBR(c.venc)} (${dias} dias em atraso). Precisamos regularizar essa pendência com urgência. Podemos combinar o pagamento hoje?`;
-  else if(dias>0) msg=`Olá, ${primeiroNome}! Passando para lembrar da nota ${c.nota} no valor de ${fmtBR(aberto)}, que venceu em ${dataBR(c.venc)}. Consegue regularizar? Qualquer dúvida estou à disposição.`;
-  else msg=`Olá, ${primeiroNome}! Lembrete da nota ${c.nota} no valor de ${fmtBR(aberto)}, com vencimento em ${dataBR(c.venc)}. Obrigado!`;
+  if(!etapa){ // em dia / a vencer
+    msg=`Olá, ${primeiroNome}! Lembrete da nota ${c.nota} no valor de ${fmtBR(valor)}, com vencimento em ${dataBR(c.venc)}. Obrigado!`;
+  }else if(etapa.nivel===1){
+    msg=`Olá, ${primeiroNome}! Tudo bem? Passando para lembrar da nota ${c.nota} no valor de ${fmtBR(valor)}${complemento}, que venceu em ${dataBR(c.venc)}. Consegue regularizar? Qualquer dúvida, estou à disposição.`;
+  }else if(etapa.nivel===2){
+    msg=`Olá, ${primeiroNome}. A nota ${c.nota} no valor de ${fmtBR(valor)}${complemento} está em atraso desde ${dataBR(c.venc)} (${dias} dias). Pedimos a gentileza de regularizar o quanto antes. Podemos combinar o pagamento?`;
+  }else if(etapa.nivel===3){
+    msg=`${primeiroNome}, consta em aberto a nota ${c.nota} no valor de ${fmtBR(valor)}${complemento}, vencida em ${dataBR(c.venc)} (${dias} dias em atraso). Solicitamos a regularização com urgência para evitarmos medidas de cobrança. Aguardamos seu retorno hoje.`;
+  }else{
+    msg=`${primeiroNome}, o débito da nota ${c.nota} no valor de ${fmtBR(valor)}${complemento} está vencido há ${dias} dias. Este é um aviso final: sem a regularização, o débito poderá ser encaminhado para negativação/protesto. Entre em contato hoje para resolvermos.`;
+  }
   const tel=(c.tel||'').replace(/\D/g,''); const num= tel.length>=10 ? '55'+tel : '';
   window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');
   if(!c.ocorrencias) c.ocorrencias=[];
-  c.ocorrencias.unshift({ id:uid(), tipo:'💬 WhatsApp', data:hoje(), texto:'Mensagem de cobrança enviada via WhatsApp.', proximo:'' });
+  c.ocorrencias.unshift({ id:uid(), tipo:'💬 WhatsApp', data:hoje(), texto:`Cobrança enviada via WhatsApp${etapa?` (${etapa.nome})`:''}.`, proximo:'' });
   save(); render();
+}
+
+/* ---------- Pagamento parcial ---------- */
+function abrirPag(id){
+  const c=db.clientes.find(x=>x.id===id); if(!c) return;
+  document.getElementById('pClienteId').value=id;
+  document.getElementById('pSaldo').textContent=`Saldo devedor atual: ${fmtBR(valorEmAberto(c))}`;
+  document.getElementById('pValor').value='';
+  document.getElementById('pData').value=hoje();
+  document.getElementById('modalPag').classList.add('open');
+}
+function salvarPagamento(){
+  const id=document.getElementById('pClienteId').value;
+  const c=db.clientes.find(x=>x.id===id); if(!c) return;
+  const valor=parseValor(document.getElementById('pValor').value);
+  const data=document.getElementById('pData').value||hoje();
+  if(valor<=0){ toast('⚠️ Informe o valor recebido'); return; }
+  if(!c.pagamentos) c.pagamentos=[];
+  c.pagamentos.push({ id:uid(), valor, data });
+  if(!c.ocorrencias) c.ocorrencias=[];
+  const saldo=valorEmAberto(c);
+  c.ocorrencias.unshift({ id:uid(), tipo:'💰 Pagamento recebido', data, texto:`Pagamento de ${fmtBR(valor)} registrado.${saldo>0?` Saldo restante: ${fmtBR(saldo)}.`:' Débito quitado.'}`, proximo:'' });
+  if(saldo<=0){ c.status='pago'; toast('✅ Débito quitado'); } else toast('💰 Pagamento registrado');
+  save(); fecharModal('modalPag'); render(); abrirDetalhe(id);
+}
+function excluirPagamento(clienteId, pagId){
+  const c=db.clientes.find(x=>x.id===clienteId); if(!c) return;
+  if(!confirm('Remover este pagamento?')) return;
+  c.pagamentos=(c.pagamentos||[]).filter(p=>p.id!==pagId);
+  if(c.status==='pago' && valorEmAberto(c)>0) c.status='aberto';
+  save(); render(); abrirDetalhe(clienteId); toast('Pagamento removido');
+}
+
+/* ---------- Config juros/multa ---------- */
+function abrirConfig(){
+  const g=cfg();
+  document.getElementById('cAplicar').checked=!!g.aplicar;
+  document.getElementById('cMulta').value=g.multaPct;
+  document.getElementById('cJuros').value=g.jurosMesPct;
+  document.getElementById('modalConfig').classList.add('open');
+}
+function salvarConfig(){
+  db.config={
+    aplicar:document.getElementById('cAplicar').checked,
+    multaPct:parseValor(document.getElementById('cMulta').value),
+    jurosMesPct:parseValor(document.getElementById('cJuros').value)
+  };
+  save(); fecharModal('modalConfig'); render(); toast('💾 Configuração salva');
 }
 
 /* ---------- Backup / Export ---------- */
@@ -656,11 +878,12 @@ function backupImport(ev){
   r.readAsText(file); ev.target.value='';
 }
 function exportarCSV(){
-  const head=['Nome','Tipo','Documento','Telefone','Email','Nota','Valor','Vencimento','Situacao','DiasAtraso','EmAberto','Ocorrencias','Parcelas'];
+  const head=['Nome','Tipo','Documento','Telefone','Email','Nota','Valor','Vencimento','Situacao','DiasAtraso','EmAberto','ValorAtualizado','MauPagador','Ocorrencias','Parcelas'];
   const linhas=db.clientes.map(c=>[
     c.nome, c.tipo, c.doc, c.tel, c.email, c.nota,
     parseValor(c.valor).toFixed(2).replace('.',','), c.venc, c.status,
     diasAtraso(c), valorEmAberto(c).toFixed(2).replace('.',','),
+    valorAtualizado(c).toFixed(2).replace('.',','), c.reincidente?'SIM':'',
     (c.ocorrencias||[]).length, temAcordo(c)?c.acordo.parcelas.length+'x':'—'
   ].map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(';'));
   const csv='﻿'+[head.join(';'),...linhas].join('\r\n');
@@ -674,9 +897,11 @@ function baixar(blob, nome){
 function imprimirRelatorio(){
   const inad=db.clientes.filter(c=>c.status!=='pago' && diasAtraso(c)>0).sort((a,b)=>diasAtraso(b)-diasAtraso(a));
   const total=inad.reduce((s,c)=>s+valorEmAberto(c),0);
+  const totalAtu=inad.reduce((s,c)=>s+valorAtualizado(c),0);
   const linhas=inad.map(c=>`<tr>
-    <td>${esc(c.nome)}</td><td>${esc(c.doc)||'—'}</td><td>${esc(c.nota)||'—'}</td>
+    <td>${esc(c.nome)}${c.reincidente?' ⚠️':''}</td><td>${esc(c.doc)||'—'}</td><td>${esc(c.nota)||'—'}</td>
     <td style="text-align:right">${fmtBR(valorEmAberto(c))}</td>
+    <td style="text-align:right">${fmtBR(valorAtualizado(c))}</td>
     <td style="text-align:center">${dataBR(c.venc)}</td>
     <td style="text-align:center;color:#c00;font-weight:bold">${diasAtraso(c)}d</td>
     <td>${esc(c.tel)||'—'}</td></tr>`).join('');
@@ -693,9 +918,9 @@ function imprimirRelatorio(){
     <body>
     <h1>⚡ Relatório de Inadimplentes</h1>
     <div class="sub">Gerado em ${dataBR(hoje())} · ${inad.length} cliente(s) em atraso</div>
-    <table><thead><tr><th>Nome</th><th>CPF/CNPJ</th><th>Nota</th><th>Em aberto</th><th>Vencimento</th><th>Atraso</th><th>Telefone</th></tr></thead>
-    <tbody>${linhas||'<tr><td colspan=7 style="text-align:center">Nenhum inadimplente 🎉</td></tr>'}</tbody></table>
-    <div class="tot">Total em aberto: ${fmtBR(total)}</div>
+    <table><thead><tr><th>Nome</th><th>CPF/CNPJ</th><th>Nota</th><th>Em aberto</th><th>Atualizado</th><th>Vencimento</th><th>Atraso</th><th>Telefone</th></tr></thead>
+    <tbody>${linhas||'<tr><td colspan=8 style="text-align:center">Nenhum inadimplente 🎉</td></tr>'}</tbody></table>
+    <div class="tot">Total em aberto: ${fmtBR(total)}${totalAtu>total?` · Com juros/multa: ${fmtBR(totalAtu)}`:''}</div>
     <button class="noprint" onclick="window.print()" style="margin-top:20px;padding:10px 20px;background:#f59e0b;border:none;border-radius:8px;font-weight:bold;cursor:pointer">🖨️ Imprimir / Salvar PDF</button>
     </body></html>`);
   w.document.close();
