@@ -228,6 +228,9 @@
   <!-- Faixas de atraso -->
   <div class="aging" id="aging"></div>
 
+  <!-- Cobrança em lote -->
+  <div id="loteBar"></div>
+
   <div class="chips" id="chips">
     <div class="chip active" data-f="todos" onclick="setFiltro('todos')">Todos</div>
     <div class="chip" data-f="atraso" onclick="setFiltro('atraso')">Em atraso</div>
@@ -394,9 +397,21 @@
         <div><label class="fld">Juros (% ao mês)</label><input type="text" id="cJuros" inputmode="decimal" placeholder="1"></div>
       </div>
       <div class="muted" style="margin-top:10px;">A multa é cobrada uma vez sobre o valor em aberto. Os juros são proporcionais aos dias de atraso (juros simples). Padrão comum no comércio: multa 2% + juros 1% ao mês.</div>
+      <div class="section-t">📲 Cobrança em lote</div>
+      <label class="fld">Reagendar próximo contato a cada (dias)</label>
+      <input type="text" id="cCadencia" inputmode="numeric" placeholder="2">
+      <div class="muted" style="margin-top:6px;">Ao cobrar alguém pelo WhatsApp, o próximo contato é agendado para daqui a esse número de dias.</div>
       <hr class="sep">
       <button class="btn wide" onclick="salvarConfig()">💾 Salvar configuração</button>
     </div>
+  </div>
+</div>
+
+<!-- MODAL: Cobrança em lote -->
+<div class="modal" id="modalLote">
+  <div class="sheet">
+    <header><h1>Cobrança em lote</h1><button class="x" onclick="fecharModal('modalLote')">×</button></header>
+    <div class="body" id="loteBody"></div>
   </div>
 </div>
 
@@ -425,7 +440,9 @@ try{ if(window.supabase) sb=window.supabase.createClient(SUPABASE_URL, SUPABASE_
 let authed=false, myToken=null, _pushTimer=null;
 let filtro='todos';
 
-function defaultDb(){ return { clientes:[], config:{aplicar:false, multaPct:2, jurosMesPct:1} }; }
+function defaultDb(){ return { clientes:[], config:{aplicar:false, multaPct:2, jurosMesPct:1, cadenciaDias:2} }; }
+function cadencia(){ const n=parseInt(cfg().cadenciaDias); return n>0?n:2; }
+function agendarProx(c){ const d=new Date(hoje()+'T00:00:00'); d.setDate(d.getDate()+cadencia()); c.proximoContato=d.toISOString().slice(0,10); }
 function loadCache(){ try{ return JSON.parse(localStorage.getItem(KEY))||defaultDb(); }catch(e){ return defaultDb(); } }
 let db = loadCache();
 
@@ -565,6 +582,11 @@ function render(){
 
   // Painel: cobranças de hoje
   renderAgenda();
+
+  // Botão de cobrança em lote
+  const naFila=clientesParaCobrar().length;
+  document.getElementById('loteBar').innerHTML = naFila
+    ? `<button class="btn wa wide" style="margin-bottom:14px;" onclick="abrirLote()">📲 Cobrar em lote — ${naFila} na fila</button>` : '';
 
   let arr=db.clientes.slice().filter(c=>{
     const dias=diasAtraso(c);
@@ -920,8 +942,56 @@ function cobrarWhats(id){
   window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');
   if(!c.ocorrencias) c.ocorrencias=[];
   c.ocorrencias.unshift({ id:uid(), tipo:'💬 WhatsApp', data:hoje(), texto:`Cobrança enviada via WhatsApp${etapa?` (${etapa.nome})`:''}.`, proximo:'' });
+  agendarProx(c); // reagenda próximo contato para +cadência dias
   save(); render();
 }
+
+/* ---------- Cobrança em lote ---------- */
+let _fila=[], _filaIdx=0;
+function clientesParaCobrar(){
+  const h=hoje();
+  return db.clientes.filter(c=> c.status!=='pago' && c.tel && diasAtraso(c)>0 && (!c.proximoContato || c.proximoContato<=h))
+    .sort((a,b)=>diasAtraso(b)-diasAtraso(a));
+}
+function abrirLote(){
+  _fila=clientesParaCobrar().map(c=>c.id); _filaIdx=0;
+  if(!_fila.length){ toast('✅ Ninguém para cobrar agora'); return; }
+  document.getElementById('modalLote').classList.add('open');
+  renderLote();
+}
+function renderLote(){
+  const body=document.getElementById('loteBody');
+  if(_filaIdx>=_fila.length){
+    body.innerHTML=`<div class="empty"><div class="ico">✅</div><div><b>Cobranças concluídas!</b><br>${_fila.length} cliente(s) na fila. Próximo contato reagendado para +${cadencia()} dias.</div></div>
+      <button class="btn wide" onclick="fecharModal('modalLote')">Fechar</button>`;
+    render(); return;
+  }
+  const c=db.clientes.find(x=>x.id===_fila[_filaIdx]);
+  if(!c){ _filaIdx++; return renderLote(); }
+  const dias=diasAtraso(c), pct=Math.round(_filaIdx/_fila.length*100);
+  body.innerHTML=`
+    <div class="muted">Cliente ${_filaIdx+1} de ${_fila.length}</div>
+    <div class="progress"><i style="width:${pct}%"></i></div>
+    <div class="det-head" style="margin-top:8px;">
+      <div class="nome">${esc(c.nome)}</div>
+      <div class="det-grid">
+        <div class="di"><div class="dl">A cobrar</div><div class="dv">${fmtBR(montanteCobrar(c))}</div></div>
+        <div class="di"><div class="dl">Atraso</div><div class="dv" style="color:var(--red)">${dias} dias</div></div>
+        <div class="di"><div class="dl">Telefone</div><div class="dv">${esc(c.tel)}</div></div>
+        <div class="di"><div class="dl">Nota</div><div class="dv">${esc(c.nota)||'—'}</div></div>
+      </div>
+    </div>
+    <button class="btn wa wide" style="margin-top:14px;" onclick="disparaLote()">📲 Abrir WhatsApp e avançar</button>
+    <button class="btn sec wide" style="margin-top:8px;" onclick="pularLote()">⏭️ Pular este</button>
+    <div class="muted" style="margin-top:12px; text-align:center;">Ao abrir, a ocorrência é registrada e o próximo contato é reagendado para +${cadencia()} dias.</div>`;
+}
+function disparaLote(){
+  const id=_fila[_filaIdx];
+  cobrarWhats(id);           // abre WhatsApp + registra ocorrência + reagenda
+  _filaIdx++;
+  renderLote();
+}
+function pularLote(){ _filaIdx++; renderLote(); }
 
 /* ---------- Pagamento parcial ---------- */
 function abrirPag(id){
@@ -997,13 +1067,15 @@ function abrirConfig(){
   document.getElementById('cAplicar').checked=!!g.aplicar;
   document.getElementById('cMulta').value=g.multaPct;
   document.getElementById('cJuros').value=g.jurosMesPct;
+  document.getElementById('cCadencia').value=g.cadenciaDias||2;
   document.getElementById('modalConfig').classList.add('open');
 }
 function salvarConfig(){
   db.config={
     aplicar:document.getElementById('cAplicar').checked,
     multaPct:parseValor(document.getElementById('cMulta').value),
-    jurosMesPct:parseValor(document.getElementById('cJuros').value)
+    jurosMesPct:parseValor(document.getElementById('cJuros').value),
+    cadenciaDias:(parseInt(document.getElementById('cCadencia').value)||2)
   };
   save(); fecharModal('modalConfig'); render(); toast('💾 Configuração salva');
 }
