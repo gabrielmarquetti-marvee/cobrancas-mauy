@@ -131,7 +131,6 @@
   .aging .ag.a2{ border-top:3px solid #fb923c; }
   .aging .ag.a3{ border-top:3px solid var(--red); }
 
-  .b-mau{ background:rgba(189,90,72,.18); color:#a2402d; border:1px solid rgba(189,90,72,.4); }
 
   /* Régua de cobrança */
   .regua{ border:1px solid var(--line); border-radius:12px; padding:12px; margin-top:8px; }
@@ -233,7 +232,6 @@
     <div class="chip active" data-f="todos" onclick="setFiltro('todos')">Todos</div>
     <div class="chip" data-f="atraso" onclick="setFiltro('atraso')">Em atraso</div>
     <div class="chip" data-f="critico" onclick="setFiltro('critico')">Crítico (+30d)</div>
-    <div class="chip" data-f="mau" onclick="setFiltro('mau')">Mau pagador</div>
     <div class="chip" data-f="negociando" onclick="setFiltro('negociando')">Negociando</div>
     <div class="chip" data-f="hoje" onclick="setFiltro('hoje')">Contato hoje</div>
     <div class="chip" data-f="pago" onclick="setFiltro('pago')">Pagos</div>
@@ -276,7 +274,6 @@
       </div>
       <label class="fld">Observações gerais</label>
       <textarea id="fObs" rows="2" placeholder="Anotações sobre o cliente..."></textarea>
-      <label class="chk"><input type="checkbox" id="fReincidente"> <span>⚠️ Marcar como <b>mau pagador</b> (já atrasou outras vezes)</span></label>
       <hr class="sep">
       <button class="btn wide" onclick="salvarCliente()">💾 Salvar cadastro</button>
       <button class="btn sec wide danger" id="btnExcluir" style="margin-top:10px; display:none;" onclick="excluirCliente()">🗑️ Excluir cadastro</button>
@@ -573,7 +570,6 @@ function render(){
     const dias=diasAtraso(c);
     if(filtro==='atraso') return dias>0 && c.status!=='pago';
     if(filtro==='critico') return dias>30 && c.status!=='pago';
-    if(filtro==='mau') return !!c.reincidente;
     if(filtro==='negociando') return c.status==='negociando';
     if(filtro==='pago') return c.status==='pago';
     if(filtro==='hoje') return c.proximoContato===hoje();
@@ -603,7 +599,7 @@ function render(){
     return `<div class="card ${cardcls}" onclick="abrirDetalhe('${c.id}')">
       <div class="top">
         <div>
-          <div class="nome">${esc(c.nome)} ${c.reincidente?'<span class="badge b-mau">⚠️ Mau pagador</span>':''}</div>
+          <div class="nome">${esc(c.nome)}</div>
           <div class="doc">${c.tipo}: ${esc(c.doc)||'—'} · Nota ${esc(c.nota)||'—'}${acordoTxt}</div>
         </div>
         <div class="rightcol">
@@ -675,12 +671,10 @@ function abrirForm(id){
     document.getElementById('fEmail').value=c.email||''; document.getElementById('fNota').value=c.nota||'';
     document.getElementById('fValor').value=c.valor||''; document.getElementById('fVenc').value=c.venc||'';
     document.getElementById('fStatus').value=c.status||'aberto'; document.getElementById('fObs').value=c.obs||'';
-    document.getElementById('fReincidente').checked=!!c.reincidente;
   }else{
     document.getElementById('formTitulo').textContent='Novo cadastro';
     ['fId','fNome','fDoc','fTel','fEmail','fNota','fValor','fVenc','fObs'].forEach(i=>document.getElementById(i).value='');
     document.getElementById('fTipo').value='CPF'; document.getElementById('fStatus').value='aberto';
-    document.getElementById('fReincidente').checked=false;
   }
   document.getElementById('btnCNPJ').style.display = document.getElementById('fTipo').value==='CNPJ' ? 'inline-flex' : 'none';
   f.classList.add('open');
@@ -697,7 +691,7 @@ function salvarCliente(){
     tipo:document.getElementById('fTipo').value, doc:document.getElementById('fDoc').value.trim(),
     tel:document.getElementById('fTel').value.trim(), email:document.getElementById('fEmail').value.trim(),
     venc:document.getElementById('fVenc').value, status:document.getElementById('fStatus').value,
-    obs:document.getElementById('fObs').value.trim(), reincidente:document.getElementById('fReincidente').checked };
+    obs:document.getElementById('fObs').value.trim() };
   if(id){ Object.assign(db.clientes.find(x=>x.id===id), dados); }
   else{ db.clientes.push({ id:uid(), ...dados, proximoContato:'', ocorrencias:[], acordo:null, pagamentos:[], tarifas:[], criadoEm:hoje() }); }
   save(); render(); fecharModal('modalForm'); toast('✅ Cadastro salvo');
@@ -782,7 +776,7 @@ function abrirDetalhe(id){
 
   document.getElementById('detBody').innerHTML=`
     <div class="det-head">
-      <div class="nome">${esc(c.nome)} ${c.reincidente?'<span class="badge b-mau">⚠️ Mau pagador</span>':''}</div>
+      <div class="nome">${esc(c.nome)}</div>
       <div class="muted" style="margin-top:4px;">${c.tipo}: ${esc(c.doc)||'—'}</div>
       <div style="margin-top:8px; font-weight:700; color:${dias>0&&c.status!=='pago'?'var(--red)':'var(--green)'}">${statusTxt}</div>
       <div class="det-grid">
@@ -1032,14 +1026,14 @@ function backupImport(ev){
   r.readAsText(file); ev.target.value='';
 }
 function exportarCSV(){
-  const head=['Nome','Tipo','Documento','Telefone','Email','Nota','Valor','Vencimento','Situacao','DiasAtraso','EmAberto','JurosMulta','Tarifas','TarifasAdiantadas','TotalCobrar','MauPagador','Ocorrencias','Parcelas'];
+  const head=['Nome','Tipo','Documento','Telefone','Email','Nota','Valor','Vencimento','Situacao','DiasAtraso','EmAberto','JurosMulta','Tarifas','TarifasAdiantadas','TotalCobrar','Ocorrencias','Parcelas'];
   const linhas=db.clientes.map(c=>[
     c.nome, c.tipo, c.doc, c.tel, c.email, c.nota,
     parseValor(c.valor).toFixed(2).replace('.',','), c.venc, c.status,
     diasAtraso(c), valorEmAberto(c).toFixed(2).replace('.',','),
     encargos(c).total.toFixed(2).replace('.',','), somaTarifas(c).toFixed(2).replace('.',','),
     somaTarifasAdiantadas(c).toFixed(2).replace('.',','),
-    montanteCobrar(c).toFixed(2).replace('.',','), c.reincidente?'SIM':'',
+    montanteCobrar(c).toFixed(2).replace('.',','),
     (c.ocorrencias||[]).length, temAcordo(c)?c.acordo.parcelas.length+'x':'—'
   ].map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(';'));
   const csv='﻿'+[head.join(';'),...linhas].join('\r\n');
@@ -1138,7 +1132,7 @@ function processarPlanilha(header, rows){
           valor:valorCelula(iValor>-1?row[iValor]:0).toFixed(2).replace('.',','),
           venc:dataCelula(iVenc>-1?row[iVenc]:''),
           status:'aberto', obs:obsParts.join(' · '),
-          reincidente:false, proximoContato:'', ocorrencias:[], acordo:null, pagamentos:[], tarifas:[], criadoEm:hoje()
+          proximoContato:'', ocorrencias:[], acordo:null, pagamentos:[], tarifas:[], criadoEm:hoje()
         });
       });
       if(!clientes.length){ toast('⚠️ Nenhum cliente reconhecido na planilha'); return; }
@@ -1171,7 +1165,7 @@ function imprimirRelatorio(){
   const total=inad.reduce((s,c)=>s+valorEmAberto(c),0);
   const totalAtu=inad.reduce((s,c)=>s+montanteCobrar(c),0);
   const linhas=inad.map(c=>`<tr>
-    <td>${esc(c.nome)}${c.reincidente?' ⚠️':''}</td><td>${esc(c.doc)||'—'}</td><td>${esc(c.nota)||'—'}</td>
+    <td>${esc(c.nome)}</td><td>${esc(c.doc)||'—'}</td><td>${esc(c.nota)||'—'}</td>
     <td style="text-align:right">${fmtBR(valorEmAberto(c))}</td>
     <td style="text-align:right">${fmtBR(somaTarifas(c))}</td>
     <td style="text-align:right;font-weight:bold">${fmtBR(montanteCobrar(c))}</td>
