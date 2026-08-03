@@ -6,6 +6,7 @@
 <meta name="theme-color" content="#7c8a56">
 <title>Cobrança - Gestão de Inadimplentes</title>
 <link rel="manifest" href="manifest.json">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   :root{
@@ -161,9 +162,33 @@
   .muted{ color:var(--muted); font-size:13px; }
   .flexb{ display:flex; gap:8px; }
   hr.sep{ border:none; border-top:1px solid var(--line); margin:18px 0; }
+
+  /* Login */
+  #loginScreen{ position:fixed; inset:0; z-index:200; background:linear-gradient(135deg,#8b9862,#5f6d3f); display:none; align-items:center; justify-content:center; padding:20px; }
+  #loginScreen.show{ display:flex; }
+  .login-box{ background:var(--panel); border-radius:18px; padding:30px 24px; width:100%; max-width:360px; box-shadow:0 12px 45px rgba(60,50,25,.35); text-align:center; }
+  .login-box .logo{ font-size:48px; line-height:1; }
+  .login-box h1{ font-size:21px; margin:8px 0 2px; color:var(--txt); }
+  .login-box p{ color:var(--muted); font-size:13px; margin-bottom:16px; }
+  .login-box input{ margin-top:11px; text-align:left; }
+  .login-box .btn{ margin-top:16px; }
+  .login-erro{ color:var(--red); font-size:13px; margin-top:12px; min-height:16px; font-weight:600; }
 </style>
 </head>
 <body>
+
+<!-- Tela de login -->
+<div id="loginScreen">
+  <div class="login-box">
+    <div class="logo">⚡</div>
+    <h1>Central de Cobrança</h1>
+    <p>Entre com seu e-mail e senha</p>
+    <input type="email" id="lEmail" placeholder="E-mail" autocomplete="username">
+    <input type="password" id="lSenha" placeholder="Senha" autocomplete="current-password" onkeydown="if(event.key==='Enter')fazerLogin()">
+    <div class="login-erro" id="lErro"></div>
+    <button class="btn wide" id="lBtn" onclick="fazerLogin()">Entrar</button>
+  </div>
+</div>
 
 <header class="app">
   <div class="container" style="padding:0;">
@@ -191,6 +216,7 @@
     <button class="btn sec tiny" onclick="imprimirRelatorio()">🖨️ Relatório</button>
     <button class="btn sec tiny" onclick="backupExport()">💾 Backup</button>
     <button class="btn sec tiny" onclick="document.getElementById('importFile').click()">📂 Restaurar</button>
+    <button class="btn sec tiny" onclick="logout()">🚪 Sair</button>
     <input type="file" id="importFile" accept="application/json" style="display:none" onchange="backupImport(event)">
   </div>
 
@@ -378,11 +404,30 @@
 
 <script>
 const KEY='cobranca_energetico_v1';
-let db = load();
+const SUPABASE_URL='https://unzmddxsuafdwwdjvvtn.supabase.co';
+const SUPABASE_KEY='sb_publishable_jhpAXD-VFWRyXMagNQKlhg_yWlZ0q7V';
+let sb=null;
+try{ if(window.supabase) sb=window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY); }catch(e){ console.warn('supabase init',e); }
+let authed=false, myToken=null, _pushTimer=null;
 let filtro='todos';
 
-function load(){ try{ return JSON.parse(localStorage.getItem(KEY))||{clientes:[]}; }catch(e){ return {clientes:[]}; } }
-function save(){ localStorage.setItem(KEY, JSON.stringify(db)); }
+function defaultDb(){ return { clientes:[], config:{aplicar:false, multaPct:2, jurosMesPct:1} }; }
+function loadCache(){ try{ return JSON.parse(localStorage.getItem(KEY))||defaultDb(); }catch(e){ return defaultDb(); } }
+let db = loadCache();
+
+function save(){
+  localStorage.setItem(KEY, JSON.stringify(db));
+  pushCloud();
+}
+function pushCloud(){
+  if(!sb || !authed) return;
+  clearTimeout(_pushTimer);
+  _pushTimer=setTimeout(async()=>{
+    myToken=uid(); db.__t=myToken;
+    const {error}=await sb.from('workspace').update({ data:db, updated_at:new Date().toISOString() }).eq('id',1);
+    if(error){ console.warn('cloud save', error); toast('⚠️ Falha ao salvar na nuvem'); }
+  }, 400);
+}
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); }
 function fmtBR(n){ return 'R$ '+(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
@@ -1023,10 +1068,84 @@ function imprimirRelatorio(){
 
 function fecharModal(id){ document.getElementById(id).classList.remove('open'); }
 
+/* ---------- Login / nuvem ---------- */
+function anyModalOpen(){ return !!document.querySelector('.modal.open'); }
+
+async function fazerLogin(){
+  const email=document.getElementById('lEmail').value.trim();
+  const senha=document.getElementById('lSenha').value;
+  const erro=document.getElementById('lErro'), btn=document.getElementById('lBtn');
+  erro.textContent='';
+  if(!email||!senha){ erro.textContent='Preencha e-mail e senha.'; return; }
+  btn.disabled=true; btn.textContent='Entrando...';
+  const {data,error}=await sb.auth.signInWithPassword({ email, password:senha });
+  btn.disabled=false; btn.textContent='Entrar';
+  if(error){
+    const m=(error.message||'').toLowerCase();
+    if(m.includes('invalid')) erro.textContent='E-mail ou senha incorretos.';
+    else if(m.includes('not confirmed')) erro.textContent='Acesso ainda não confirmado. Peça ao administrador para liberar.';
+    else erro.textContent='Não foi possível entrar. Tente novamente.';
+    return;
+  }
+  await onAuthed(data.session);
+}
+
+async function onAuthed(session){
+  authed=true;
+  document.querySelector('header.app .sub').textContent = session.user.email;
+  document.getElementById('loginScreen').classList.remove('show');
+  document.getElementById('lSenha').value='';
+  await loadCloud();
+  subscribeRealtime();
+}
+
+async function loadCloud(){
+  const localRaw=localStorage.getItem(KEY);
+  const local = localRaw? (()=>{try{return JSON.parse(localRaw);}catch(e){return null;}})() : null;
+  const {data,error}=await sb.from('workspace').select('data').eq('id',1).single();
+  if(error){ if(local) db=local; render(); toast('⚠️ Sem conexão — usando dados locais'); return; }
+  db = data.data || defaultDb();
+  if(!db.config) db.config=defaultDb().config;
+  // Migração: nuvem vazia + havia dados neste aparelho
+  if((!db.clientes||db.clientes.length===0) && local && local.clientes && local.clientes.length){
+    if(confirm(`Enviar os ${local.clientes.length} cadastro(s) deste aparelho para a nuvem (compartilhar com a equipe)?`)){
+      db=local; save(); toast('✅ Dados enviados para a nuvem');
+    }
+  }
+  localStorage.setItem(KEY, JSON.stringify(db));
+  render();
+}
+
+function subscribeRealtime(){
+  sb.channel('workspace-rt')
+    .on('postgres_changes', { event:'UPDATE', schema:'public', table:'workspace', filter:'id=eq.1' }, payload=>{
+      if(payload.new && payload.new.data){
+        if(payload.new.data.__t===myToken) return; // alteração feita por mim
+        db=payload.new.data;
+        localStorage.setItem(KEY, JSON.stringify(db));
+        if(!anyModalOpen()) render();
+      }
+    })
+    .subscribe();
+}
+
+async function logout(){
+  if(!confirm('Sair da sua conta?')) return;
+  try{ await sb.auth.signOut(); }catch(e){}
+  location.reload();
+}
+
+async function init(){
+  if(!sb){ document.querySelector('header.app .sub').textContent='modo offline (sem conexão)'; render(); return; }
+  document.getElementById('loginScreen').classList.add('show');
+  const {data:{session}}=await sb.auth.getSession();
+  if(session) await onAuthed(session);
+}
+
 /* eventos */
 document.getElementById('aTotal').addEventListener('input', previewAcordo);
 document.getElementById('aQtd').addEventListener('change', previewAcordo);
-render();
+init();
 </script>
 </body>
 </html>
