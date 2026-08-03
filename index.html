@@ -215,9 +215,11 @@
     <button class="btn sec tiny" onclick="exportarCSV()">📊 Exportar CSV</button>
     <button class="btn sec tiny" onclick="imprimirRelatorio()">🖨️ Relatório</button>
     <button class="btn sec tiny" onclick="backupExport()">💾 Backup</button>
+    <button class="btn sec tiny" onclick="document.getElementById('csvFile').click()">📥 Importar planilha</button>
     <button class="btn sec tiny" onclick="document.getElementById('importFile').click()">📂 Restaurar</button>
     <button class="btn sec tiny" onclick="logout()">🚪 Sair</button>
     <input type="file" id="importFile" accept="application/json" style="display:none" onchange="backupImport(event)">
+    <input type="file" id="csvFile" accept=".csv,text/csv,text/plain" style="display:none" onchange="importarCSV(event)">
   </div>
 
   <!-- Painel: cobranças de hoje -->
@@ -396,6 +398,20 @@
       <div class="muted" style="margin-top:10px;">A multa é cobrada uma vez sobre o valor em aberto. Os juros são proporcionais aos dias de atraso (juros simples). Padrão comum no comércio: multa 2% + juros 1% ao mês.</div>
       <hr class="sep">
       <button class="btn wide" onclick="salvarConfig()">💾 Salvar configuração</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Importar planilha -->
+<div class="modal" id="modalImport">
+  <div class="sheet">
+    <header><h1>Importar planilha</h1><button class="x" onclick="fecharModal('modalImport')">×</button></header>
+    <div class="body">
+      <div id="impResumo" class="muted"></div>
+      <div id="impPreview" style="margin-top:12px;"></div>
+      <div id="impAviso" class="muted" style="margin-top:12px;"></div>
+      <hr class="sep">
+      <button class="btn wide" id="impBtn" onclick="confirmarImport()">✔️ Importar para a nuvem</button>
     </div>
   </div>
 </div>
@@ -1029,6 +1045,99 @@ function exportarCSV(){
   baixar(new Blob([csv],{type:'text/csv;charset=utf-8'}), `inadimplentes-${hoje()}.csv`);
   toast('📊 CSV exportado');
 }
+/* ---------- Importar planilha (CSV) ---------- */
+let _importPend=null;
+function normH(s){ return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim(); }
+function acharCol(header, keys){ for(let i=0;i<header.length;i++){ const h=normH(header[i]); if(keys.some(k=>h.includes(k))) return i; } return -1; }
+function parseValorImp(s){ if(!s) return 0; return parseValor(String(s).replace(/[r$\s]/gi,'')); }
+function parseDataBR(s){
+  if(!s) return '';
+  s=String(s).trim();
+  if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+  const m=s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if(m){ let d=m[1], mo=m[2], y=m[3]; if(y.length===2) y='20'+y; return `${y}-${mo.padStart(2,'0')}-${d.padStart(2,'0')}`; }
+  return '';
+}
+function classificarContato(v){
+  v=(v||'').trim();
+  if(!v) return {tel:'',email:'',resto:''};
+  if(v.includes('@')) return {tel:'',email:v,resto:''};
+  if(v.replace(/\D/g,'').length>=8) return {tel:v,email:'',resto:''};
+  return {tel:'',email:'',resto:v};
+}
+function parseCSV(text){
+  text=text.replace(/^\uFEFF/,'');
+  const linhas=text.split(/\r?\n/).filter(l=>l.trim().length);
+  if(!linhas.length) return {header:[],rows:[]};
+  const p=linhas[0];
+  const delim = p.indexOf(';')>-1?';' : p.indexOf('\t')>-1?'\t' : ',';
+  const parseLine=(l)=>{ const out=[]; let cur='', q=false;
+    for(let i=0;i<l.length;i++){ const ch=l[i];
+      if(q){ if(ch==='"'){ if(l[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=ch; }
+      else { if(ch==='"') q=true; else if(ch===delim){ out.push(cur); cur=''; } else cur+=ch; } }
+    out.push(cur); return out.map(s=>s.trim()); };
+  return { header:parseLine(linhas[0]), rows:linhas.slice(1).map(parseLine) };
+}
+function importarCSV(ev){
+  const file=ev.target.files[0]; if(!file) return;
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const {header,rows}=parseCSV(r.result);
+      if(!header.length || !rows.length){ toast('⚠️ Planilha vazia ou inválida'); return; }
+      const iNome=acharCol(header,['pagador','nome','cliente','razao']);
+      const iSeu=acharCol(header,['seu numero','seu num','seu n']);
+      const iNosso=acharCol(header,['nosso numero','nosso num','nosso n']);
+      const iValor=acharCol(header,['valor']);
+      const iVenc=acharCol(header,['vencimento','venc']);
+      const iContato=acharCol(header,['contato','telefone','whatsapp','celular','fone','email','e-mail']);
+      const iObs=acharCol(header,['observ']);
+      const iDoc=acharCol(header,['cnpj','cpf','documento']);
+      const clientes=[];
+      rows.forEach(row=>{
+        const nome=(iNome>-1?row[iNome]:'').trim();
+        if(!nome) return; // linha sem pagador é ignorada
+        const cont=classificarContato(iContato>-1?row[iContato]:'');
+        const doc=(iDoc>-1?row[iDoc]:'').trim();
+        const tipo = doc.replace(/\D/g,'').length>11 ? 'CNPJ' : 'CPF';
+        const obsParts=[];
+        if(iObs>-1 && row[iObs]) obsParts.push(row[iObs].trim());
+        if(iNosso>-1 && row[iNosso]) obsParts.push('Nosso Número: '+row[iNosso].trim());
+        if(cont.resto) obsParts.push('Contato: '+cont.resto);
+        clientes.push({
+          id:uid(), nome, tipo, doc,
+          tel:cont.tel, email:cont.email,
+          nota:(iSeu>-1?row[iSeu]:(iNosso>-1?row[iNosso]:'')).trim(),
+          valor:parseValorImp(iValor>-1?row[iValor]:'').toFixed(2).replace('.',','),
+          venc:parseDataBR(iVenc>-1?row[iVenc]:''),
+          status:'aberto', obs:obsParts.join(' · '),
+          reincidente:false, proximoContato:'', ocorrencias:[], acordo:null, pagamentos:[], tarifas:[], criadoEm:hoje()
+        });
+      });
+      if(!clientes.length){ toast('⚠️ Nenhum cliente reconhecido na planilha'); return; }
+      _importPend=clientes;
+      // prévia
+      const cols=[iNome,iSeu,iValor,iVenc,iContato].filter(x=>x>-1).map(i=>header[i]);
+      document.getElementById('impResumo').innerHTML=`Encontrados <b style="color:var(--txt)">${clientes.length}</b> cliente(s). Confira a prévia abaixo:`;
+      const total=clientes.reduce((s,c)=>s+parseValor(c.valor),0);
+      document.getElementById('impPreview').innerHTML=clientes.slice(0,6).map(c=>`
+        <div class="parc"><span class="pnum">🧾</span><div class="pinfo">
+          <div class="pv">${esc(c.nome)} — ${fmtBR(parseValor(c.valor))}</div>
+          <div class="pd">Nota ${esc(c.nota)||'—'} · vence ${dataBR(c.venc)} · ${esc(c.tel||c.email)||'sem contato'}</div>
+        </div></div>`).join('') + (clientes.length>6?`<div class="muted" style="margin-top:6px;">…e mais ${clientes.length-6}.</div>`:'');
+      document.getElementById('impAviso').innerHTML=`Total importado: <b style="color:var(--txt)">${fmtBR(total)}</b>.<br>Os clientes serão <b>adicionados</b> aos existentes (não apaga o que já está no sistema).`;
+      document.getElementById('modalImport').classList.add('open');
+    }catch(e){ console.warn(e); toast('⚠️ Não consegui ler o arquivo'); }
+  };
+  r.readAsText(file,'UTF-8'); ev.target.value='';
+}
+function confirmarImport(){
+  if(!_importPend || !_importPend.length){ fecharModal('modalImport'); return; }
+  db.clientes=db.clientes.concat(_importPend);
+  const n=_importPend.length; _importPend=null;
+  save(); render(); fecharModal('modalImport'); toast(`✅ ${n} cliente(s) importado(s)`);
+}
+
 function baixar(blob, nome){
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=nome;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
