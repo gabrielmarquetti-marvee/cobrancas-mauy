@@ -3,20 +3,21 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="theme-color" content="#0f172a">
+<meta name="theme-color" content="#7c8a56">
 <title>Cobrança - Gestão de Inadimplentes</title>
 <link rel="manifest" href="manifest.json">
 <style>
   * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   :root{
-    --bg:#0f172a; --panel:#1e293b; --panel2:#273449; --line:#334155;
-    --txt:#e2e8f0; --muted:#94a3b8; --brand:#f59e0b; --brand2:#fbbf24;
-    --green:#22c55e; --red:#ef4444; --yellow:#eab308; --blue:#3b82f6;
+    --bg:#e9e0d0; --panel:#f8f3ea; --panel2:#f1ebdd; --line:#d9cdb6;
+    --txt:#40382b; --muted:#8a7f6b; --brand:#7c8a56; --brand2:#5f6d3f;
+    --green:#5f8d4e; --red:#bd5a48; --yellow:#b98f2f; --blue:#5b7fa6;
+    --headtxt:#f7f3ea;
   }
   body{ font-family:-apple-system,'Segoe UI',Roboto,sans-serif; background:var(--bg); color:var(--txt); padding-bottom:90px; }
   .container{ max-width:900px; margin:0 auto; padding:16px; }
 
-  header.app{ position:sticky; top:0; z-index:20; background:linear-gradient(135deg,#f59e0b,#d97706); color:#1a1200; padding:16px; box-shadow:0 2px 12px rgba(0,0,0,.4); }
+  header.app{ position:sticky; top:0; z-index:20; background:linear-gradient(135deg,#8b9862,#5f6d3f); color:var(--headtxt); padding:16px; box-shadow:0 2px 12px rgba(80,70,40,.25); }
   header.app h1{ font-size:19px; display:flex; align-items:center; gap:8px; }
   header.app .sub{ font-size:12px; opacity:.8; margin-top:2px; }
 
@@ -36,7 +37,7 @@
   label.fld{ display:block; font-size:12px; color:var(--muted); margin:10px 0 5px; font-weight:600; }
 
   .tools{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
-  .btn{ background:var(--brand); color:#1a1200; border:none; padding:11px 16px; border-radius:10px; font-weight:700; font-size:14px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
+  .btn{ background:var(--brand); color:#fff; border:none; padding:11px 16px; border-radius:10px; font-weight:700; font-size:14px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
   .btn:active{ transform:scale(.97); }
   .btn.sec{ background:var(--panel2); color:var(--txt); border:1px solid var(--line); }
   .btn.wide{ width:100%; justify-content:center; }
@@ -55,7 +56,7 @@
   .card:active{ border-color:var(--brand); }
   .card.pago{ opacity:.6; border-left:4px solid var(--green); }
   .card.atraso{ border-left:4px solid var(--red); }
-  .card.critico{ border-left:4px solid var(--red); background:linear-gradient(90deg,rgba(239,68,68,.08),var(--panel)); }
+  .card.critico{ border-left:4px solid var(--red); background:linear-gradient(90deg,rgba(189,90,72,.1),var(--panel)); }
   .card.negoc{ border-left:4px solid var(--yellow); }
   .card .top{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
   .card .nome{ font-size:16px; font-weight:700; }
@@ -65,10 +66,10 @@
   .card .meta .m .ml{ font-size:10px; color:var(--muted); text-transform:uppercase; }
   .card .meta .m .mv{ font-size:14px; font-weight:700; }
   .badge{ font-size:11px; font-weight:700; padding:4px 10px; border-radius:20px; white-space:nowrap; }
-  .b-atraso{ background:rgba(239,68,68,.15); color:#fca5a5; }
-  .b-dia{ background:rgba(34,197,94,.15); color:#86efac; }
-  .b-pago{ background:rgba(148,163,184,.15); color:#cbd5e1; }
-  .b-negoc{ background:rgba(234,179,8,.15); color:#fde047; }
+  .b-atraso{ background:rgba(189,90,72,.15); color:#a2402d; }
+  .b-dia{ background:rgba(95,141,78,.18); color:#456b34; }
+  .b-pago{ background:rgba(138,127,107,.18); color:#6f6552; }
+  .b-negoc{ background:rgba(185,143,47,.2); color:#8a6410; }
   .b-critico{ background:var(--red); color:#fff; }
   .prox{ font-size:11px; color:var(--brand2); font-weight:600; margin-top:4px; }
 
@@ -84,9 +85,9 @@
   .modal{ display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:50; overflow-y:auto; }
   .modal.open{ display:block; }
   .sheet{ background:var(--bg); min-height:100%; max-width:900px; margin:0 auto; }
-  .sheet header{ display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; z-index:5; background:linear-gradient(135deg,#f59e0b,#d97706); color:#1a1200; padding:16px; }
+  .sheet header{ display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; z-index:5; background:linear-gradient(135deg,#8b9862,#5f6d3f); color:var(--headtxt); padding:16px; }
   .sheet header h1{ font-size:18px; }
-  .sheet .x{ background:rgba(0,0,0,.15); border:none; color:#1a1200; width:34px; height:34px; border-radius:50%; font-size:20px; cursor:pointer; font-weight:700; }
+  .sheet .x{ background:rgba(255,255,255,.2); border:none; color:var(--headtxt); width:34px; height:34px; border-radius:50%; font-size:20px; cursor:pointer; font-weight:700; }
   .sheet .body{ padding:16px; }
   .row2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 
@@ -128,7 +129,7 @@
   .aging .ag.a2{ border-top:3px solid #fb923c; }
   .aging .ag.a3{ border-top:3px solid var(--red); }
 
-  .b-mau{ background:rgba(239,68,68,.2); color:#fca5a5; border:1px solid rgba(239,68,68,.4); }
+  .b-mau{ background:rgba(189,90,72,.18); color:#a2402d; border:1px solid rgba(189,90,72,.4); }
 
   /* Régua de cobrança */
   .regua{ border:1px solid var(--line); border-radius:12px; padding:12px; margin-top:8px; }
@@ -136,7 +137,7 @@
   .regua .rn{ font-size:15px; font-weight:700; margin:2px 0 8px; }
   .regua .steps{ display:flex; gap:5px; margin-bottom:10px; }
   .regua .steps > i{ flex:1; height:6px; border-radius:3px; background:var(--panel2); }
-  .encargo{ background:rgba(245,158,11,.1); border:1px solid rgba(245,158,11,.3); border-radius:10px; padding:10px 12px; margin-top:10px; font-size:13px; }
+  .encargo{ background:rgba(124,138,86,.12); border:1px solid rgba(124,138,86,.35); border-radius:10px; padding:10px 12px; margin-top:10px; font-size:13px; }
   .encargo b{ color:var(--brand2); }
   .chk{ display:flex; align-items:center; gap:10px; margin:12px 0; cursor:pointer; }
   .chk input{ width:20px; height:20px; }
@@ -151,7 +152,7 @@
   .occ .oc-data{ font-size:11px; color:var(--muted); }
   .occ .oc-txt{ font-size:14px; color:var(--txt); margin-top:4px; line-height:1.4; white-space:pre-wrap; }
 
-  .fab{ position:fixed; bottom:20px; right:20px; z-index:30; background:var(--brand); color:#1a1200; width:58px; height:58px; border-radius:50%; border:none; font-size:28px; box-shadow:0 4px 16px rgba(245,158,11,.5); cursor:pointer; display:flex; align-items:center; justify-content:center; }
+  .fab{ position:fixed; bottom:20px; right:20px; z-index:30; background:var(--brand); color:#fff; width:58px; height:58px; border-radius:50%; border:none; font-size:28px; box-shadow:0 4px 16px rgba(124,138,86,.5); cursor:pointer; display:flex; align-items:center; justify-content:center; }
   .fab:active{ transform:scale(.92); }
 
   .toast{ position:fixed; bottom:100px; left:50%; transform:translateX(-50%); background:var(--green); color:#043; padding:12px 22px; border-radius:30px; font-weight:700; z-index:100; opacity:0; transition:opacity .3s, transform .3s; pointer-events:none; }
@@ -1005,8 +1006,8 @@ function imprimirRelatorio(){
     .sub{color:#666;font-size:13px;margin-bottom:16px}
     table{width:100%;border-collapse:collapse;font-size:13px}
     th,td{border:1px solid #ccc;padding:7px 9px;text-align:left}
-    th{background:#f59e0b;color:#1a1200}
-    tr:nth-child(even){background:#f8f8f8}
+    th{background:#7c8a56;color:#fff}
+    tr:nth-child(even){background:#f5f1e8}
     .tot{margin-top:16px;font-size:16px;font-weight:bold}
     @media print{.noprint{display:none}}</style></head>
     <body>
@@ -1015,7 +1016,7 @@ function imprimirRelatorio(){
     <table><thead><tr><th>Nome</th><th>CPF/CNPJ</th><th>Nota</th><th>Em aberto</th><th>Tarifas</th><th>A cobrar</th><th>Vencimento</th><th>Atraso</th><th>Telefone</th></tr></thead>
     <tbody>${linhas||'<tr><td colspan=9 style="text-align:center">Nenhum inadimplente 🎉</td></tr>'}</tbody></table>
     <div class="tot">Total em aberto: ${fmtBR(total)}${totalAtu>total?` · Total a cobrar (c/ juros, multa e tarifas): ${fmtBR(totalAtu)}`:''}</div>
-    <button class="noprint" onclick="window.print()" style="margin-top:20px;padding:10px 20px;background:#f59e0b;border:none;border-radius:8px;font-weight:bold;cursor:pointer">🖨️ Imprimir / Salvar PDF</button>
+    <button class="noprint" onclick="window.print()" style="margin-top:20px;padding:10px 20px;background:#7c8a56;color:#fff;border:none;border-radius:8px;font-weight:bold;cursor:pointer">🖨️ Imprimir / Salvar PDF</button>
     </body></html>`);
   w.document.close();
 }
