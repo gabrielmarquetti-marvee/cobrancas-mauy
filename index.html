@@ -243,6 +243,25 @@
 
 <button class="fab" onclick="abrirForm()">+</button>
 
+<!-- MODAL: Unificar / Renegociar -->
+<div class="modal" id="modalReneg">
+  <div class="sheet">
+    <header><h1>Unificar e renegociar</h1><button class="x" onclick="fecharModal('modalReneg')">×</button></header>
+    <div class="body">
+      <div class="muted" id="rgQtd"></div>
+      <label class="fld">Novo valor total (R$)</label>
+      <input type="text" id="rgValor" inputmode="decimal" placeholder="0,00">
+      <label class="fld">Nova data de vencimento</label>
+      <input type="date" id="rgData">
+      <label class="fld">Observação (opcional)</label>
+      <textarea id="rgObs" rows="2" placeholder="Ex: parcelou em acordo verbal, desconto de X..."></textarea>
+      <div class="muted" style="margin-top:10px;">Os lançamentos selecionados viram <b>uma única negociação</b> com esse valor e vencimento. Os antigos ficam arquivados como "renegociados" e saem da lista de cobrança.</div>
+      <hr class="sep">
+      <button class="btn wide" onclick="salvarReneg()">🤝 Criar renegociação</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: Mais opções -->
 <div class="modal" id="modalMenu">
   <div class="sheet">
@@ -492,7 +511,7 @@ function cfg(){ if(!db.config) db.config={aplicar:false, multaPct:2, jurosMesPct
 function temAcordo(c){ return c.acordo && c.acordo.parcelas && c.acordo.parcelas.length; }
 function somaPagamentos(c){ return (c.pagamentos||[]).reduce((s,p)=>s+parseValor(p.valor),0); }
 function valorEmAberto(c){
-  if(c.status==='pago') return 0;
+  if(c.status==='pago' || c.status==='renegociado') return 0;
   if(temAcordo(c)) return c.acordo.parcelas.filter(p=>!p.pago).reduce((s,p)=>s+parseValor(p.valor),0);
   return Math.max(0, parseValor(c.valor)-somaPagamentos(c));
 }
@@ -513,7 +532,7 @@ function recebidoNoMes(){
   return t;
 }
 function diasAtraso(c){
-  if(c.status==='pago') return 0;
+  if(c.status==='pago' || c.status==='renegociado') return 0;
   if(temAcordo(c)){
     const atrasadas=c.acordo.parcelas.filter(p=>!p.pago && p.venc && diffDias(p.venc)>0);
     if(!atrasadas.length) return 0;
@@ -606,8 +625,44 @@ function atualizarSelBar(){
     </div>
     <div class="flexb">
       <button class="btn sec sm" onclick="selecionarTodos()">${todos?'Limpar':'Todos'}</button>
+      <button class="btn sec sm" onclick="abrirReneg()">🤝 Renegociar</button>
       <button class="btn sm" onclick="abrirOccMulti()">📌 Ocorrência</button>
     </div>`;
+}
+function abrirReneg(){
+  if(selecionados.size<1){ toast('Selecione ao menos 1 lançamento'); return; }
+  const sel=db.clientes.filter(c=>selecionados.has(c.id));
+  const soma=sel.reduce((s,c)=>s+valorEmAberto(c),0);
+  document.getElementById('rgQtd').innerHTML=`<b style="color:var(--txt)">${sel.length}</b> lançamento(s): ${sel.map(c=>esc(c.nome)+' ('+fmtBR(valorEmAberto(c))+')').join(', ')}. Soma em aberto: <b style="color:var(--txt)">${fmtBR(soma)}</b>`;
+  document.getElementById('rgValor').value=soma.toFixed(2).replace('.',',');
+  document.getElementById('rgData').value='';
+  document.getElementById('rgObs').value='';
+  document.getElementById('modalReneg').classList.add('open');
+}
+function salvarReneg(){
+  const sel=db.clientes.filter(c=>selecionados.has(c.id));
+  if(!sel.length){ fecharModal('modalReneg'); return; }
+  const novoValor=parseValor(document.getElementById('rgValor').value);
+  const novaData=document.getElementById('rgData').value;
+  const obs=document.getElementById('rgObs').value.trim();
+  if(novoValor<=0){ toast('⚠️ Informe o novo valor'); return; }
+  if(!novaData){ toast('⚠️ Informe a nova data de vencimento'); return; }
+  const notas=sel.map(c=>c.nota).filter(Boolean).join(' + ');
+  const cons=sel[0];
+  cons.valor=novoValor.toFixed(2).replace('.',',');
+  cons.venc=novaData; cons.status='negociando';
+  cons.acordo=null; cons.pagamentos=[]; cons.tarifas=[]; cons.pagoEm=''; cons.proximoContato='';
+  if(sel.length>1) cons.nota=notas;
+  cons.obs=('Renegociação/unificação'+(sel.length>1?(' das notas: '+notas):'')+(obs?(' · '+obs):'')).trim();
+  if(!cons.ocorrencias) cons.ocorrencias=[];
+  cons.ocorrencias.unshift({id:uid(),tipo:'🤝 Negociação',data:hoje(),texto:`Renegociação${sel.length>1?` (unificou ${sel.length} lançamentos: ${notas})`:''}. Novo valor ${fmtBR(novoValor)}, vencimento ${dataBR(novaData)}.`,proximo:''});
+  sel.slice(1).forEach(c=>{
+    c.status='renegociado';
+    if(!c.ocorrencias) c.ocorrencias=[];
+    c.ocorrencias.unshift({id:uid(),tipo:'🤝 Negociação',data:hoje(),texto:`Renegociado e unificado (novo venc. ${dataBR(novaData)}, valor total ${fmtBR(novoValor)}).`,proximo:''});
+  });
+  save(); fecharModal('modalReneg'); sairSelMode(); render();
+  toast(`🤝 Renegociação criada${sel.length>1?` (${sel.length} unificados)`:''}`);
 }
 function abrirOccMulti(){
   if(!selecionados.size){ toast('Selecione ao menos 1 cliente'); return; }
@@ -648,6 +703,7 @@ function render(){
   renderAgenda();
 
   let arr=db.clientes.slice().filter(c=>{
+    if(c.status==='renegociado') return false; // arquivados por renegociação
     if(filtro==='consignado') return !!c.consignado;
     if(c.consignado) return false; // consignados só aparecem no filtro próprio
     const dias=diasAtraso(c);
