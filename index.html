@@ -231,12 +231,11 @@
 
   <div class="chips" id="chips">
     <div class="chip active" data-f="todos" onclick="setFiltro('todos')">Todos</div>
+    <div class="chip" data-f="consignado" onclick="setFiltro('consignado')">🏷️ Consignados</div>
     <div class="chip" data-f="atraso" onclick="setFiltro('atraso')">Em atraso</div>
     <div class="chip" data-f="critico" onclick="setFiltro('critico')">Crítico (+30d)</div>
-    <div class="chip" data-f="negociando" onclick="setFiltro('negociando')">Negociando</div>
     <div class="chip" data-f="hoje" onclick="setFiltro('hoje')">Contato hoje</div>
     <div class="chip" data-f="pago" onclick="setFiltro('pago')">Pagos</div>
-    <div class="chip" data-f="consignado" onclick="setFiltro('consignado')">🏷️ Consignados</div>
   </div>
 
   <div id="lista"></div>
@@ -654,10 +653,9 @@ function render(){
     const dias=diasAtraso(c);
     if(filtro==='atraso') return dias>0 && c.status!=='pago';
     if(filtro==='critico') return dias>30 && c.status!=='pago';
-    if(filtro==='negociando') return c.status==='negociando';
     if(filtro==='pago') return c.status==='pago';
-    if(filtro==='hoje') return c.proximoContato===hoje();
-    return true;
+    if(filtro==='hoje') return c.proximoContato===hoje() && c.status!=='pago';
+    return c.status!=='pago'; // "Todos" mostra tudo, menos os pagos
   });
   if(q) arr=arr.filter(c=> (c.nome||'').toLowerCase().includes(q) || (c.doc||'').toLowerCase().includes(q) || (c.nota||'').toLowerCase().includes(q) );
   arr.sort((a,b)=>{
