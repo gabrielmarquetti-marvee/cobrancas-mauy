@@ -78,6 +78,8 @@
   .b-pago{ background:rgba(138,127,107,.18); color:#6f6552; }
   .b-negoc{ background:rgba(185,143,47,.2); color:#8a6410; }
   .b-critico{ background:var(--red); color:#fff; }
+  .b-consig{ background:rgba(91,127,166,.18); color:#3d5f85; border:1px solid rgba(91,127,166,.4); }
+  .card.consig{ border-left:4px solid var(--blue); }
   .prox{ font-size:11px; color:var(--brand2); font-weight:600; margin-top:4px; }
 
   /* Check pago */
@@ -234,6 +236,7 @@
     <div class="chip" data-f="negociando" onclick="setFiltro('negociando')">Negociando</div>
     <div class="chip" data-f="hoje" onclick="setFiltro('hoje')">Contato hoje</div>
     <div class="chip" data-f="pago" onclick="setFiltro('pago')">Pagos</div>
+    <div class="chip" data-f="consignado" onclick="setFiltro('consignado')">🏷️ Consignados</div>
   </div>
 
   <div id="lista"></div>
@@ -289,6 +292,7 @@
       </div>
       <label class="fld">Observações gerais</label>
       <textarea id="fObs" rows="2" placeholder="Anotações sobre o cliente..."></textarea>
+      <label class="chk"><input type="checkbox" id="fConsignado"> <span>🏷️ Dívida de <b>consignado</b> (situação à parte — fica separado do restante)</span></label>
       <hr class="sep">
       <button class="btn wide" onclick="salvarCliente()">💾 Salvar cadastro</button>
       <button class="btn sec wide danger" id="btnExcluir" style="margin-top:10px; display:none;" onclick="excluirCliente()">🗑️ Excluir cadastro</button>
@@ -502,6 +506,7 @@ function valorPago(c){
 function recebidoNoMes(){
   const ym=hoje().slice(0,7); let t=0;
   db.clientes.forEach(c=>{
+    if(c.consignado) return;
     (c.pagamentos||[]).forEach(p=>{ if((p.data||'').slice(0,7)===ym) t+=parseValor(p.valor); });
     if(temAcordo(c)) c.acordo.parcelas.forEach(p=>{ if(p.pago && (p.pagoEm||'').slice(0,7)===ym) t+=parseValor(p.valor); });
     else if(c.status==='pago' && (c.pagoEm||'').slice(0,7)===ym && !(c.pagamentos&&c.pagamentos.length)) t+=parseValor(c.valor);
@@ -620,6 +625,7 @@ function render(){
   const q=document.getElementById('busca').value.toLowerCase().trim();
   let totalAtraso=0, qtdInad=0, recebido=0, f1=0,f2=0,f3=0;
   db.clientes.forEach(c=>{
+    if(c.consignado) return; // consignados são situação à parte
     recebido += valorPago(c);
     const dias=diasAtraso(c);
     if(c.status!=='pago' && dias>0){
@@ -643,6 +649,8 @@ function render(){
   renderAgenda();
 
   let arr=db.clientes.slice().filter(c=>{
+    if(filtro==='consignado') return !!c.consignado;
+    if(c.consignado) return false; // consignados só aparecem no filtro próprio
     const dias=diasAtraso(c);
     if(filtro==='atraso') return dias>0 && c.status!=='pago';
     if(filtro==='critico') return dias>30 && c.status!=='pago';
@@ -660,9 +668,16 @@ function render(){
 
   _visiveis=arr.map(c=>c.id);
   const lista=document.getElementById('lista');
-  if(!arr.length){ lista.innerHTML=`<div class="empty"><div class="ico">📋</div><div>Nenhum cadastro encontrado.<br>Toque no + para adicionar o primeiro cliente.</div></div>`; return; }
+  let prefixo='';
+  if(filtro==='consignado'){
+    const cs=db.clientes.filter(c=>c.consignado);
+    const aberto=cs.reduce((s,c)=>s+valorEmAberto(c),0);
+    const receb=cs.reduce((s,c)=>s+valorPago(c),0);
+    prefixo=`<div class="agenda" style="border-left-color:var(--blue)"><h3>🏷️ Dívidas de consignado</h3><div class="muted" style="margin-top:4px;">${cs.length} pessoa(s) · Em aberto: <b style="color:var(--red)">${fmtBR(aberto)}</b> · Já recebido: <b style="color:var(--green)">${fmtBR(receb)}</b></div></div>`;
+  }
+  if(!arr.length){ lista.innerHTML=prefixo+`<div class="empty"><div class="ico">📋</div><div>Nenhum cadastro encontrado.<br>${filtro==='consignado'?'Marque um cliente como consignado no cadastro.':'Toque no + para adicionar o primeiro cliente.'}</div></div>`; return; }
 
-  lista.innerHTML=arr.map(c=>{
+  lista.innerHTML=prefixo + arr.map(c=>{
     const dias=diasAtraso(c), pago=c.status==='pago';
     let badge, bcls, cardcls='';
     if(pago){ badge='Pago'; bcls='b-pago'; cardcls='pago'; }
@@ -674,11 +689,11 @@ function render(){
     const extra = !pago && montanteCobrar(c) > aberto+0.005;
     const acordoTxt = temAcordo(c) ? ` · ${c.acordo.parcelas.filter(p=>p.pago).length}/${c.acordo.parcelas.length} parc.` : '';
     const selecionado = selMode && selecionados.has(c.id);
-    return `<div class="card ${cardcls} ${selecionado?'sel':''}" onclick="cardClick('${c.id}')">
+    return `<div class="card ${cardcls} ${c.consignado?'consig':''} ${selecionado?'sel':''}" onclick="cardClick('${c.id}')">
       <div class="top">
         ${selMode?`<button class="check ${selecionado?'on':''}" style="margin-right:10px" title="Selecionar" onclick="event.stopPropagation(); toggleSel('${c.id}')">✓</button>`:''}
         <div style="flex:1; min-width:0">
-          <div class="nome">${esc(c.nome)}</div>
+          <div class="nome">${esc(c.nome)} ${c.consignado?'<span class="badge b-consig">🏷️ Consignado</span>':''}</div>
           <div class="doc">${c.tipo}: ${esc(c.doc)||'—'} · Nota ${esc(c.nota)||'—'}${acordoTxt}</div>
         </div>
         <div class="rightcol">
@@ -709,9 +724,9 @@ function ultimaCobrancaTxt(c){
 /* Painel: cobranças de hoje */
 function renderAgenda(){
   const h=hoje();
-  const agendados = db.clientes.filter(c=>c.status!=='pago' && c.proximoContato===h);
-  const atrasadosProm = db.clientes.filter(c=>c.status!=='pago' && c.proximoContato && c.proximoContato<h);
-  const recemVenc = db.clientes.filter(c=>c.status!=='pago' && !c.proximoContato && diasAtraso(c)>=1 && diasAtraso(c)<=3);
+  const agendados = db.clientes.filter(c=>!c.consignado && c.status!=='pago' && c.proximoContato===h);
+  const atrasadosProm = db.clientes.filter(c=>!c.consignado && c.status!=='pago' && c.proximoContato && c.proximoContato<h);
+  const recemVenc = db.clientes.filter(c=>!c.consignado && c.status!=='pago' && !c.proximoContato && diasAtraso(c)>=1 && diasAtraso(c)<=3);
   const el=document.getElementById('agenda');
   const total=agendados.length+atrasadosProm.length+recemVenc.length;
   const naFila=clientesParaCobrar().length;
@@ -761,10 +776,12 @@ function abrirForm(id){
     document.getElementById('fEmail').value=c.email||''; document.getElementById('fNota').value=c.nota||'';
     document.getElementById('fValor').value=c.valor||''; document.getElementById('fVenc').value=c.venc||'';
     document.getElementById('fStatus').value=c.status||'aberto'; document.getElementById('fObs').value=c.obs||'';
+    document.getElementById('fConsignado').checked=!!c.consignado;
   }else{
     document.getElementById('formTitulo').textContent='Novo cadastro';
     ['fId','fNome','fDoc','fTel','fEmail','fNota','fValor','fVenc','fObs'].forEach(i=>document.getElementById(i).value='');
     document.getElementById('fTipo').value='CPF'; document.getElementById('fStatus').value='aberto';
+    document.getElementById('fConsignado').checked=false;
   }
   document.getElementById('btnCNPJ').style.display = document.getElementById('fTipo').value==='CNPJ' ? 'inline-flex' : 'none';
   f.classList.add('open');
@@ -781,7 +798,7 @@ function salvarCliente(){
     tipo:document.getElementById('fTipo').value, doc:document.getElementById('fDoc').value.trim(),
     tel:document.getElementById('fTel').value.trim(), email:document.getElementById('fEmail').value.trim(),
     venc:document.getElementById('fVenc').value, status:document.getElementById('fStatus').value,
-    obs:document.getElementById('fObs').value.trim() };
+    obs:document.getElementById('fObs').value.trim(), consignado:document.getElementById('fConsignado').checked };
   if(id){ Object.assign(db.clientes.find(x=>x.id===id), dados); }
   else{ db.clientes.push({ id:uid(), ...dados, proximoContato:'', ocorrencias:[], acordo:null, pagamentos:[], tarifas:[], criadoEm:hoje() }); }
   save(); render(); fecharModal('modalForm'); toast('✅ Cadastro salvo');
@@ -1026,7 +1043,7 @@ function cobrarWhats(id){
 let _fila=[], _filaIdx=0;
 function clientesParaCobrar(){
   const h=hoje();
-  return db.clientes.filter(c=> c.status!=='pago' && c.tel && diasAtraso(c)>0 && (!c.proximoContato || c.proximoContato<=h))
+  return db.clientes.filter(c=> !c.consignado && c.status!=='pago' && c.tel && diasAtraso(c)>0 && (!c.proximoContato || c.proximoContato<=h))
     .sort((a,b)=>diasAtraso(b)-diasAtraso(a));
 }
 function abrirLote(){
@@ -1163,10 +1180,10 @@ function backupExport(){
   toast('💾 Backup gerado');
 }
 function exportarCSV(){
-  const head=['Nome','Tipo','Documento','Telefone','Email','Nota','Valor','Vencimento','Situacao','DiasAtraso','EmAberto','JurosMulta','Tarifas','TarifasAdiantadas','TotalCobrar','Ocorrencias','Parcelas'];
+  const head=['Nome','Tipo','Documento','Telefone','Email','Nota','Valor','Vencimento','Situacao','Consignado','DiasAtraso','EmAberto','JurosMulta','Tarifas','TarifasAdiantadas','TotalCobrar','Ocorrencias','Parcelas'];
   const linhas=db.clientes.map(c=>[
     c.nome, c.tipo, c.doc, c.tel, c.email, c.nota,
-    parseValor(c.valor).toFixed(2).replace('.',','), c.venc, c.status,
+    parseValor(c.valor).toFixed(2).replace('.',','), c.venc, c.status, c.consignado?'SIM':'',
     diasAtraso(c), valorEmAberto(c).toFixed(2).replace('.',','),
     encargos(c).total.toFixed(2).replace('.',','), somaTarifas(c).toFixed(2).replace('.',','),
     somaTarifasAdiantadas(c).toFixed(2).replace('.',','),
@@ -1416,7 +1433,7 @@ function baixar(blob, nome){
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
 function imprimirRelatorio(){
-  const inad=db.clientes.filter(c=>c.status!=='pago' && diasAtraso(c)>0).sort((a,b)=>diasAtraso(b)-diasAtraso(a));
+  const inad=db.clientes.filter(c=>!c.consignado && c.status!=='pago' && diasAtraso(c)>0).sort((a,b)=>diasAtraso(b)-diasAtraso(a));
   const total=inad.reduce((s,c)=>s+valorEmAberto(c),0);
   const totalAtu=inad.reduce((s,c)=>s+montanteCobrar(c),0);
   const linhas=inad.map(c=>`<tr>
