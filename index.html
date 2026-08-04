@@ -436,7 +436,7 @@
       <div id="impPreview" style="margin-top:12px;"></div>
       <div id="impAviso" class="muted" style="margin-top:12px;"></div>
       <hr class="sep">
-      <button class="btn wide" id="impBtn" onclick="confirmarImport()">✔️ Importar para a nuvem</button>
+      <button class="btn wide" id="impBtn" onclick="confirmarImportacao()">✔️ Importar para a nuvem</button>
     </div>
   </div>
 </div>
@@ -1178,7 +1178,7 @@ function exportarCSV(){
   toast('📊 CSV exportado');
 }
 /* ---------- Importar planilha (CSV) ---------- */
-let _importPend=null;
+let _importPend=null, _impMode='planilha', _franPend=null;
 function normH(s){ return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim(); }
 function acharCol(header, keys){ for(let i=0;i<header.length;i++){ const h=normH(header[i]); if(keys.some(k=>h.includes(k))) return i; } return -1; }
 function parseValorImp(s){ if(!s) return 0; return parseValor(String(s).replace(/[r$\s]/gi,'')); }
@@ -1233,7 +1233,10 @@ function importarArquivo(ev){
         const aoa=XLSX.utils.sheet_to_json(ws,{header:1, raw:true, defval:'', cellDates:true}).filter(rw=>rw.some(c=>String(c).trim().length));
         header=aoa[0]||[]; rows=aoa.slice(1);
       }else{
-        const parsed=parseCSV(r.result); header=parsed.header; rows=parsed.rows;
+        const txt=r.result;
+        // Detecta francesinha do Santander (aviso de movimentação)
+        if(/AVISO DE MOVIMENTA|TARIFAS\/CUSTAS|LIQUIDACOES/i.test(txt)){ processarFrancesinha(txt); return; }
+        const parsed=parseCSV(txt); header=parsed.header; rows=parsed.rows;
       }
       if(!header.length || !rows.length){ toast('⚠️ Planilha vazia ou inválida'); return; }
       processarPlanilha(header, rows);
@@ -1243,6 +1246,7 @@ function importarArquivo(ev){
   ev.target.value='';
 }
 function processarPlanilha(header, rows){
+      _impMode='planilha';
       const iNome=acharCol(header,['pagador','nome','cliente','razao']);
       const iSeu=acharCol(header,['seu numero','seu num','seu n']);
       const iNosso=acharCol(header,['nosso numero','nosso num','nosso n']);
@@ -1266,6 +1270,7 @@ function processarPlanilha(header, rows){
           id:uid(), nome, tipo, doc,
           tel:cont.tel, email:cont.email,
           nota:celTexto(iSeu>-1?row[iSeu]:(iNosso>-1?row[iNosso]:'')),
+          nossoNumero:celTexto(iNosso>-1?row[iNosso]:''),
           valor:valorCelula(iValor>-1?row[iValor]:0).toFixed(2).replace('.',','),
           venc:dataCelula(iVenc>-1?row[iVenc]:''),
           status:'aberto', obs:obsParts.join(' · '),
@@ -1291,6 +1296,119 @@ function confirmarImport(){
   db.clientes=db.clientes.concat(_importPend);
   const n=_importPend.length; _importPend=null;
   save(); render(); fecharModal('modalImport'); toast(`✅ ${n} cliente(s) importado(s)`);
+}
+function confirmarImportacao(){ if(_impMode==='francesinha') confirmarFrancesinha(); else confirmarImport(); }
+
+/* ---------- Francesinha Santander (aviso de movimentação .TXT) ---------- */
+function normNosso(v){ return String(v||'').replace(/\D/g,'').replace(/^0+/,''); }
+function clienteNosso(c){
+  if(c.nossoNumero) return normNosso(c.nossoNumero);
+  const m=(c.obs||'').match(/nosso\s*n[uú]mero:\s*(\S+)/i);
+  return m?normNosso(m[1]):'';
+}
+function parseFrancesinha(text){
+  const numRe=/\d{1,3}(?:\.\d{3})*,\d{2}/g;
+  const liq=[], tar=[], ins=[]; let sec=null;
+  text.split(/\r?\n/).forEach(line=>{
+    const t=line.trim(); if(!t) return;
+    if(/LIQUIDACOES/i.test(t) && /---/.test(t)){ sec='LIQ'; return; }
+    if(/TARIFAS\/CUSTAS/i.test(t) && /---/.test(t)){ sec='TAR'; return; }
+    if(/INSTRUCOES\/OCORRENCIAS/i.test(t) && /---/.test(t)){ sec='INS'; return; }
+    if(/RESUMO DE MOVIMENTACAO|LANCAMENTOS A SEREM|AVISO DE MOVIMENTA/i.test(t)){ sec=null; return; }
+    if(!sec) return;
+    if(/^PAGADOR/i.test(t) || /^CUSTAS/i.test(t) || /^-+/.test(t)) return;
+    if(/^TOTAL/i.test(t)) return;
+    const nossoM=line.match(/\b(\d{11,13})\b/);
+    if(!nossoM) return;
+    const nosso=nossoM[1];
+    const idx=line.indexOf(nosso);
+    const before=line.slice(0,idx).trim();
+    const after=line.slice(idx+nosso.length);
+    const nums=(after.match(numRe)||[]).map(parseValor);
+    const datas6=(after.match(/\b\d{6}\b/g)||[]);
+    let evento='';
+    if(nums.length){ const last=(after.match(numRe)||[]).pop(); const li=after.lastIndexOf(last); evento=after.slice(li+last.length).trim(); }
+    const rec={ nosso, pagador:before.replace(/\s{2,}.*$/,'').trim(), nums, datas6, evento };
+    if(sec==='LIQ') liq.push(rec); else if(sec==='TAR') tar.push(rec); else ins.push(rec);
+  });
+  return {liq, tar, ins};
+}
+function processarFrancesinha(text){
+  _impMode='francesinha';
+  const {liq,tar,ins}=parseFrancesinha(text);
+  const idx={};
+  db.clientes.forEach(c=>{ const n=clienteNosso(c); if(n){ (idx[n]=idx[n]||[]).push(c); } });
+  const acoesTar=[], acoesLiq=[], acoesIns=[], naoAch=[];
+  tar.forEach(r=>{
+    const valor=(r.nums[1]||0)+(r.nums[2]||0);
+    if(valor<=0) return;
+    const alvo=(idx[normNosso(r.nosso)]||[])[0];
+    if(!alvo){ naoAch.push({tipo:'Tarifa',nosso:r.nosso,valor,evento:r.evento}); return; }
+    acoesTar.push({c:alvo, valor, evento:r.evento||'Tarifa/custa banco', nosso:r.nosso});
+  });
+  liq.forEach(r=>{
+    const valor = r.nums.length>=4 ? r.nums[3] : (r.nums[r.nums.length-2]||0);
+    const dtPgt = r.datas6.length>=2 ? d6(r.datas6[1]) : (r.datas6[0]?d6(r.datas6[0]):hoje());
+    const alvo=(idx[normNosso(r.nosso)]||[])[0];
+    if(!alvo){ naoAch.push({tipo:'Liquidação',nosso:r.nosso,valor,evento:r.evento}); return; }
+    acoesLiq.push({c:alvo, valor, dtPgt, evento:r.evento, nosso:r.nosso});
+  });
+  ins.forEach(r=>{
+    const alvo=(idx[normNosso(r.nosso)]||[])[0];
+    if(!alvo){ naoAch.push({tipo:'Ocorrência',nosso:r.nosso,evento:r.evento}); return; }
+    acoesIns.push({c:alvo, evento:r.evento||'Ocorrência bancária', nosso:r.nosso});
+  });
+  _franPend={acoesTar,acoesLiq,acoesIns};
+  // Prévia
+  document.getElementById('impResumo').innerHTML=`<b style="color:var(--txt)">Francesinha Santander</b> — o que será aplicado:`;
+  const bloco=(titulo,arr,fn)=> arr.length?`<div class="section-t" style="margin:14px 0 8px">${titulo} (${arr.length})</div>`+arr.slice(0,8).map(fn).join('')+(arr.length>8?`<div class="muted">…e mais ${arr.length-8}.</div>`:''):'';
+  const linha=(nome,det)=>`<div class="parc"><span class="pnum">•</span><div class="pinfo"><div class="pv">${esc(nome)}</div><div class="pd">${det}</div></div></div>`;
+  document.getElementById('impPreview').innerHTML=
+    bloco('💰 Baixas (títulos liquidados → marcar pago)',acoesLiq,a=>linha(a.c.nome,`${fmtBR(a.valor)} · pago em ${dataBR(a.dtPgt)}`))
+   +bloco('🧾 Tarifas/custas a lançar',acoesTar,a=>linha(a.c.nome,`${fmtBR(a.valor)} · ${esc(a.evento)}`))
+   +bloco('📝 Ocorrências (protesto etc.)',acoesIns,a=>linha(a.c.nome,esc(a.evento)))
+   +bloco('⚠️ Não encontrados (Nosso Número sem cliente)',naoAch,a=>linha('Nosso Nº '+a.nosso,`${a.tipo}${a.valor?' · '+fmtBR(a.valor):''}${a.evento?' · '+esc(a.evento):''}`));
+  const totLiq=acoesLiq.reduce((s,a)=>s+a.valor,0), totTar=acoesTar.reduce((s,a)=>s+a.valor,0);
+  document.getElementById('impAviso').innerHTML=`Baixas: <b style="color:var(--txt)">${fmtBR(totLiq)}</b> · Tarifas: <b style="color:var(--txt)">${fmtBR(totTar)}</b>.${naoAch.length?`<br>⚠️ ${naoAch.length} item(ns) sem cliente correspondente — importe os boletos antes, ou confira o Nosso Número.`:''}`;
+  document.getElementById('impBtn').textContent='✔️ Aplicar na carteira';
+  if(!acoesTar.length && !acoesLiq.length && !acoesIns.length){ toast('Nada para aplicar (nenhum título casou)'); }
+  document.getElementById('modalImport').classList.add('open');
+}
+function d6(s){ // ddmmaa -> yyyy-mm-dd
+  if(!/^\d{6}$/.test(s)) return '';
+  return '20'+s.slice(4,6)+'-'+s.slice(2,4)+'-'+s.slice(0,2);
+}
+function confirmarFrancesinha(){
+  if(!_franPend){ fecharModal('modalImport'); return; }
+  const {acoesTar,acoesLiq,acoesIns}=_franPend; let nT=0,nL=0,nI=0;
+  acoesLiq.forEach(a=>{
+    const c=a.c; if(c.status==='pago') return;
+    if(!c.pagamentos) c.pagamentos=[];
+    const ref='SANTLIQ:'+a.nosso;
+    if((c.pagamentos||[]).some(p=>p.ref===ref)) return;
+    c.pagamentos.push({id:uid(), valor:a.valor, data:a.dtPgt||hoje(), ref});
+    c.status='pago'; c.pagoEm=a.dtPgt||hoje();
+    if(!c.ocorrencias) c.ocorrencias=[];
+    c.ocorrencias.unshift({id:uid(),tipo:'💰 Pagamento recebido',data:a.dtPgt||hoje(),texto:`Baixa automática (liquidação Santander): ${fmtBR(a.valor)}.`,proximo:''});
+    nL++;
+  });
+  acoesTar.forEach(a=>{
+    const c=a.c; if(!c.tarifas) c.tarifas=[];
+    const ref='SANT:'+a.nosso+':'+a.evento+':'+a.valor.toFixed(2);
+    if((c.tarifas||[]).some(t=>t.ref===ref)) return;
+    c.tarifas.push({id:uid(), descricao:a.evento, valor:a.valor, data:hoje(), adiantada:true, ref});
+    nT++;
+  });
+  acoesIns.forEach(a=>{
+    const c=a.c; if(!c.ocorrencias) c.ocorrencias=[];
+    const ref='SANTOC:'+a.nosso+':'+a.evento;
+    if((c.ocorrencias||[]).some(o=>o.ref===ref)) return;
+    c.ocorrencias.unshift({id:uid(),tipo:'📝 Outro',data:hoje(),texto:'Banco: '+a.evento,proximo:'',ref});
+    nI++;
+  });
+  save(); render(); fecharModal('modalImport'); _franPend=null;
+  document.getElementById('impBtn').textContent='✔️ Importar para a nuvem';
+  toast(`✅ ${nL} baixa(s) · ${nT} tarifa(s) · ${nI} ocorrência(s)`);
 }
 
 function baixar(blob, nome){
