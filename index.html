@@ -1013,24 +1013,19 @@ function toggleParcela(clienteId, parcelaId){
 function cobrarWhats(id){
   const c=db.clientes.find(x=>x.id===id); if(!c) return;
   const dias=diasAtraso(c), primeiroNome=(c.nome||'').split(' ')[0];
-  const enc=encargos(c), tar=somaTarifas(c);
   const valor = montanteCobrar(c);
-  let complemento='';
-  if(enc.total>0 && tar>0) complemento=` (já com multa, juros e tarifas)`;
-  else if(enc.total>0) complemento=` (já com multa e juros de ${dias} dias de atraso)`;
-  else if(tar>0) complemento=` (já incluídas as tarifas/custas)`;
   const etapa=reguaEtapa(dias);
   let msg;
   if(!etapa){ // em dia / a vencer
     msg=`Olá, ${primeiroNome}! Lembrete da nota ${c.nota} no valor de ${fmtBR(valor)}, com vencimento em ${dataBR(c.venc)}. Obrigado!`;
   }else if(etapa.nivel===1){
-    msg=`Olá, ${primeiroNome}! Tudo bem? Passando para lembrar da nota ${c.nota} no valor de ${fmtBR(valor)}${complemento}, que venceu em ${dataBR(c.venc)}. Consegue regularizar? Qualquer dúvida, estou à disposição.`;
+    msg=`Olá, ${primeiroNome}! Tudo bem? Passando para lembrar da nota ${c.nota} no valor de ${fmtBR(valor)}, que venceu em ${dataBR(c.venc)}. Consegue dar um jeitinho de regularizar? Qualquer dúvida, estou à disposição.`;
   }else if(etapa.nivel===2){
-    msg=`Olá, ${primeiroNome}. A nota ${c.nota} no valor de ${fmtBR(valor)}${complemento} está em atraso desde ${dataBR(c.venc)} (${dias} dias). Pedimos a gentileza de regularizar o quanto antes. Podemos combinar o pagamento?`;
+    msg=`Olá, ${primeiroNome}. A nota ${c.nota}, no valor de ${fmtBR(valor)}, segue em aberto desde ${dataBR(c.venc)} — já são ${dias} dias de atraso. Preciso que você regularize o quanto antes. Consegue efetuar o pagamento ainda hoje?`;
   }else if(etapa.nivel===3){
-    msg=`${primeiroNome}, consta em aberto a nota ${c.nota} no valor de ${fmtBR(valor)}${complemento}, vencida em ${dataBR(c.venc)} (${dias} dias em atraso). Solicitamos a regularização com urgência para evitarmos medidas de cobrança. Aguardamos seu retorno hoje.`;
+    msg=`${primeiroNome}, o débito da nota ${c.nota}, no valor de ${fmtBR(valor)}, está vencido há ${dias} dias e ainda não foi quitado. Solicito a regularização com urgência para evitarmos a adoção de medidas de cobrança. Aguardo seu retorno hoje com uma posição.`;
   }else{
-    msg=`${primeiroNome}, o débito da nota ${c.nota} no valor de ${fmtBR(valor)}${complemento} está vencido há ${dias} dias. Este é um aviso final: sem a regularização, o débito poderá ser encaminhado para negativação/protesto. Entre em contato hoje para resolvermos.`;
+    msg=`${primeiroNome}, este é um AVISO FINAL referente à nota ${c.nota}, no valor de ${fmtBR(valor)}, vencida há ${dias} dias. Não havendo o pagamento ou um acordo nas próximas 48 horas, o débito será encaminhado para protesto e negativação (Serasa/SPC). Entre em contato imediatamente para resolvermos.`;
   }
   const tel=(c.tel||'').replace(/\D/g,''); const num= tel.length>=10 ? '55'+tel : '';
   window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');
