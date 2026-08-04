@@ -673,7 +673,8 @@ function render(){
     const cs=db.clientes.filter(c=>c.consignado);
     const aberto=cs.reduce((s,c)=>s+valorEmAberto(c),0);
     const receb=cs.reduce((s,c)=>s+valorPago(c),0);
-    prefixo=`<div class="agenda" style="border-left-color:var(--blue)"><h3>🏷️ Dívidas de consignado</h3><div class="muted" style="margin-top:4px;">${cs.length} pessoa(s) · Em aberto: <b style="color:var(--red)">${fmtBR(aberto)}</b> · Já recebido: <b style="color:var(--green)">${fmtBR(receb)}</b></div></div>`;
+    const filaC=filaCobranca(true).length;
+    prefixo=`<div class="agenda" style="border-left-color:var(--blue)"><h3>🏷️ Dívidas de consignado</h3><div class="muted" style="margin-top:4px;">${cs.length} pessoa(s) · Em aberto: <b style="color:var(--red)">${fmtBR(aberto)}</b> · Já recebido: <b style="color:var(--green)">${fmtBR(receb)}</b></div>${filaC?`<button class="btn wa wide" style="margin-top:10px;" onclick="abrirLote(true)">📲 Cobrar consignados em lote — ${filaC} na fila</button>`:''}</div>`;
   }
   if(!arr.length){ lista.innerHTML=prefixo+`<div class="empty"><div class="ico">📋</div><div>Nenhum cadastro encontrado.<br>${filtro==='consignado'?'Marque um cliente como consignado no cadastro.':'Toque no + para adicionar o primeiro cliente.'}</div></div>`; return; }
 
@@ -1041,13 +1042,14 @@ function cobrarWhats(id){
 
 /* ---------- Cobrança em lote ---------- */
 let _fila=[], _filaIdx=0;
-function clientesParaCobrar(){
+function filaCobranca(consig){
   const h=hoje();
-  return db.clientes.filter(c=> !c.consignado && c.status!=='pago' && c.tel && diasAtraso(c)>0 && (!c.proximoContato || c.proximoContato<=h))
+  return db.clientes.filter(c=> (!!c.consignado===!!consig) && c.status!=='pago' && c.tel && (!c.proximoContato || c.proximoContato<=h) && (consig || diasAtraso(c)>0))
     .sort((a,b)=>diasAtraso(b)-diasAtraso(a));
 }
-function abrirLote(){
-  _fila=clientesParaCobrar().map(c=>c.id); _filaIdx=0;
+function clientesParaCobrar(){ return filaCobranca(false); }
+function abrirLote(consig){
+  _fila=filaCobranca(!!consig).map(c=>c.id); _filaIdx=0;
   if(!_fila.length){ toast('✅ Ninguém para cobrar agora'); return; }
   document.getElementById('modalLote').classList.add('open');
   renderLote();
