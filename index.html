@@ -207,7 +207,7 @@
   <div class="kpis">
     <div class="kpi red"><div class="v" id="kpiAtraso">R$ 0</div><div class="l">Em atraso</div></div>
     <div class="kpi yellow"><div class="v" id="kpiQtd">0</div><div class="l">Inadimplentes</div></div>
-    <div class="kpi green"><div class="v" id="kpiRecebido">R$ 0</div><div class="l">Recebido</div></div>
+    <div class="kpi green"><div class="v" id="kpiRecebido">R$ 0</div><div class="l">Recebido no mês</div><div class="l" id="kpiRecebidoTotal" style="text-transform:none; letter-spacing:0; margin-top:2px;"></div></div>
   </div>
 
   <!-- Toolbar -->
@@ -217,23 +217,15 @@
 
   <div class="tools">
     <button class="btn sec tiny" onclick="toggleSelMode()" id="btnSel">☑️ Selecionar</button>
-    <button class="btn sec tiny" onclick="abrirConfig()">⚙️ Juros/Multa</button>
-    <button class="btn sec tiny" onclick="exportarCSV()">📊 Exportar CSV</button>
-    <button class="btn sec tiny" onclick="imprimirRelatorio()">🖨️ Relatório</button>
-    <button class="btn sec tiny" onclick="backupExport()">💾 Backup</button>
-    <button class="btn sec tiny" onclick="document.getElementById('csvFile').click()">📥 Importar planilha (CSV/Excel)</button>
-    <button class="btn sec tiny" onclick="logout()">🚪 Sair</button>
+    <button class="btn sec tiny" onclick="document.getElementById('modalMenu').classList.add('open')">⋯ Mais opções</button>
     <input type="file" id="csvFile" accept=".csv,.xlsx,.xls,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none" onchange="importarArquivo(event)">
   </div>
 
-  <!-- Painel: cobranças de hoje -->
+  <!-- Painel: cobranças de hoje (inclui botão de lote) -->
   <div id="agenda"></div>
 
   <!-- Faixas de atraso -->
   <div class="aging" id="aging"></div>
-
-  <!-- Cobrança em lote -->
-  <div id="loteBar"></div>
 
   <div class="chips" id="chips">
     <div class="chip active" data-f="todos" onclick="setFiltro('todos')">Todos</div>
@@ -248,6 +240,22 @@
 </div>
 
 <button class="fab" onclick="abrirForm()">+</button>
+
+<!-- MODAL: Mais opções -->
+<div class="modal" id="modalMenu">
+  <div class="sheet">
+    <header><h1>Mais opções</h1><button class="x" onclick="fecharModal('modalMenu')">×</button></header>
+    <div class="body">
+      <button class="btn sec wide" onclick="fecharModal('modalMenu');document.getElementById('csvFile').click()">📥 Importar planilha (CSV / Excel)</button>
+      <button class="btn sec wide" style="margin-top:10px" onclick="fecharModal('modalMenu');exportarCSV()">📊 Exportar CSV</button>
+      <button class="btn sec wide" style="margin-top:10px" onclick="fecharModal('modalMenu');imprimirRelatorio()">🖨️ Relatório de inadimplentes</button>
+      <button class="btn sec wide" style="margin-top:10px" onclick="fecharModal('modalMenu');backupExport()">💾 Fazer backup dos dados</button>
+      <button class="btn sec wide" style="margin-top:10px" onclick="fecharModal('modalMenu');abrirConfig()">⚙️ Juros, multa e cadência</button>
+      <hr class="sep">
+      <button class="btn sec wide danger" onclick="logout()">🚪 Sair da conta</button>
+    </div>
+  </div>
+</div>
 
 <!-- MODAL: Cadastro/Edição -->
 <div class="modal" id="modalForm">
@@ -490,6 +498,16 @@ function valorPago(c){
   if(temAcordo(c)) return c.acordo.parcelas.filter(p=>p.pago).reduce((s,p)=>s+parseValor(p.valor),0);
   return somaPagamentos(c);
 }
+/* Recebido no mês atual (usa datas de pagamento; itens quitados sem data não contam) */
+function recebidoNoMes(){
+  const ym=hoje().slice(0,7); let t=0;
+  db.clientes.forEach(c=>{
+    (c.pagamentos||[]).forEach(p=>{ if((p.data||'').slice(0,7)===ym) t+=parseValor(p.valor); });
+    if(temAcordo(c)) c.acordo.parcelas.forEach(p=>{ if(p.pago && (p.pagoEm||'').slice(0,7)===ym) t+=parseValor(p.valor); });
+    else if(c.status==='pago' && (c.pagoEm||'').slice(0,7)===ym && !(c.pagamentos&&c.pagamentos.length)) t+=parseValor(c.valor);
+  });
+  return t;
+}
 function diasAtraso(c){
   if(c.status==='pago') return 0;
   if(temAcordo(c)){
@@ -612,7 +630,8 @@ function render(){
   });
   document.getElementById('kpiAtraso').textContent=fmtBRk(totalAtraso);
   document.getElementById('kpiQtd').textContent=qtdInad;
-  document.getElementById('kpiRecebido').textContent=fmtBRk(recebido);
+  document.getElementById('kpiRecebido').textContent=fmtBRk(recebidoNoMes());
+  document.getElementById('kpiRecebidoTotal').textContent='total: '+fmtBRk(recebido);
 
   // Faixas de atraso
   document.getElementById('aging').innerHTML=`
@@ -620,13 +639,8 @@ function render(){
     <div class="ag a2"><div class="v">${fmtBRk(f2)}</div><div class="l">31–60 dias</div></div>
     <div class="ag a3"><div class="v">${fmtBRk(f3)}</div><div class="l">60+ dias</div></div>`;
 
-  // Painel: cobranças de hoje
+  // Painel: cobranças de hoje (com botão de lote)
   renderAgenda();
-
-  // Botão de cobrança em lote
-  const naFila=clientesParaCobrar().length;
-  document.getElementById('loteBar').innerHTML = naFila
-    ? `<button class="btn wa wide" style="margin-bottom:14px;" onclick="abrirLote()">📲 Cobrar em lote — ${naFila} na fila</button>` : '';
 
   let arr=db.clientes.slice().filter(c=>{
     const dias=diasAtraso(c);
@@ -675,12 +689,21 @@ function render(){
       <div class="meta">
         <div class="m"><div class="ml">${pago?'Valor':'Em aberto'}</div><div class="mv">${fmtBR(pago?parseValor(c.valor):aberto)}</div></div>
         <div class="m"><div class="ml">Vencimento</div><div class="mv">${dataBR(c.venc)}</div></div>
-        <div class="m"><div class="ml">Ocorrências</div><div class="mv">${(c.ocorrencias||[]).length}</div></div>
+        <div class="m"><div class="ml">Última cobrança</div><div class="mv">${ultimaCobrancaTxt(c)}</div></div>
       </div>
       ${extra ? `<div class="prox" style="color:var(--brand2)">💰 A cobrar: ${fmtBR(montanteCobrar(c))}</div>`:''}
       ${c.proximoContato && !pago ? `<div class="prox">📅 Próximo contato: ${dataBR(c.proximoContato)}</div>`:''}
     </div>`;
   }).join('');
+}
+
+function ultimaCobrancaTxt(c){
+  const datas=(c.ocorrencias||[]).map(o=>o.data).filter(Boolean).sort();
+  if(!datas.length) return 'nunca';
+  const dif=diffDias(datas[datas.length-1]);
+  if(dif<=0) return 'hoje';
+  if(dif===1) return 'ontem';
+  return 'há '+dif+'d';
 }
 
 /* Painel: cobranças de hoje */
@@ -691,14 +714,16 @@ function renderAgenda(){
   const recemVenc = db.clientes.filter(c=>c.status!=='pago' && !c.proximoContato && diasAtraso(c)>=1 && diasAtraso(c)<=3);
   const el=document.getElementById('agenda');
   const total=agendados.length+atrasadosProm.length+recemVenc.length;
-  if(!total){ el.innerHTML=''; return; }
+  const naFila=clientesParaCobrar().length;
+  if(!total && !naFila){ el.innerHTML=''; return; }
   const item=(c,tag,late)=>`<div class="ag-item">
       <span class="ag-nome" onclick="abrirDetalhe('${c.id}')">${esc(c.nome)}</span>
       <span class="ag-tag ${late?'late':''}">${tag}</span>
       ${c.tel?`<button class="btn wa tiny" onclick="cobrarWhats('${c.id}')">💬</button>`:''}
     </div>`;
   el.innerHTML=`<div class="agenda">
-    <h3>📅 Cobranças de hoje <span class="ag-tag" style="margin-left:auto">${total}</span></h3>
+    <h3>📅 Cobranças de hoje ${total?`<span class="ag-tag" style="margin-left:auto">${total}</span>`:''}</h3>
+    ${naFila?`<button class="btn wa wide" style="margin:8px 0 4px;" onclick="abrirLote()">📲 Cobrar em lote — ${naFila} na fila</button>`:''}
     ${atrasadosProm.map(c=>item(c,'⚠️ contato atrasado',true)).join('')}
     ${agendados.map(c=>item(c,'agendado hoje',false)).join('')}
     ${recemVenc.map(c=>item(c,`venceu há ${diasAtraso(c)}d`,false)).join('')}
@@ -709,12 +734,12 @@ function renderAgenda(){
 function togglePago(id){
   const c=db.clientes.find(x=>x.id===id); if(!c) return;
   if(c.status==='pago'){
-    c.status='aberto';
-    if(temAcordo(c)) c.acordo.parcelas.forEach(p=>p.pago=false);
+    c.status='aberto'; c.pagoEm='';
+    if(temAcordo(c)) c.acordo.parcelas.forEach(p=>{p.pago=false; p.pagoEm='';});
     toast('↩️ Reaberto');
   }else{
-    c.status='pago';
-    if(temAcordo(c)) c.acordo.parcelas.forEach(p=>p.pago=true);
+    c.status='pago'; c.pagoEm=hoje();
+    if(temAcordo(c)) c.acordo.parcelas.forEach(p=>{p.pago=true; if(!p.pagoEm) p.pagoEm=hoje();});
     if(!c.ocorrencias) c.ocorrencias=[];
     c.ocorrencias.unshift({id:uid(),tipo:'💰 Pagamento recebido',data:hoje(),texto:'Pagamento confirmado (marcado como pago).',proximo:''});
     toast('✅ Marcado como pago');
@@ -900,7 +925,7 @@ function salvarOcorrencia(){
     if(!c.ocorrencias) c.ocorrencias=[];
     c.ocorrencias.unshift({ id:uid(), tipo, data, texto, proximo });
     if(proximo) c.proximoContato=proximo;
-    if(tipo.includes('Pagamento recebido')) c.status='pago';
+    if(tipo.includes('Pagamento recebido')){ c.status='pago'; c.pagoEm=data||hoje(); }
     else if(tipo.includes('Negociação')||tipo.includes('Promessa')) c.status='negociando';
   });
   save(); fecharModal('modalOcc');
@@ -958,9 +983,11 @@ function toggleParcela(clienteId, parcelaId){
   const c=db.clientes.find(x=>x.id===clienteId); if(!c||!temAcordo(c)) return;
   const p=c.acordo.parcelas.find(x=>x.id===parcelaId); if(!p) return;
   p.pago=!p.pago;
+  p.pagoEm = p.pago ? hoje() : '';
   if(p.pago){ if(!c.ocorrencias) c.ocorrencias=[]; c.ocorrencias.unshift({id:uid(),tipo:'💰 Pagamento recebido',data:hoje(),texto:`${p.num}ª parcela paga (${fmtBR(parseValor(p.valor))}).`,proximo:''}); }
   const todasPagas=c.acordo.parcelas.every(x=>x.pago);
   c.status = todasPagas ? 'pago' : 'negociando';
+  if(todasPagas) c.pagoEm=hoje(); else c.pagoEm='';
   save(); render(); abrirDetalhe(clienteId);
 }
 
