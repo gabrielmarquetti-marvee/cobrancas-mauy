@@ -235,6 +235,7 @@
     <div class="chip" data-f="atraso" onclick="setFiltro('atraso')">Em atraso</div>
     <div class="chip" data-f="critico" onclick="setFiltro('critico')">Crítico (+30d)</div>
     <div class="chip" data-f="hoje" onclick="setFiltro('hoje')">Contato hoje</div>
+    <div class="chip" data-f="reneg" onclick="setFiltro('reneg')">🤝 Renegociações</div>
     <div class="chip" data-f="pago" onclick="setFiltro('pago')">Pagos</div>
   </div>
 
@@ -524,7 +525,7 @@ function valorPago(c){
 function recebidoNoMes(){
   const ym=hoje().slice(0,7); let t=0;
   db.clientes.forEach(c=>{
-    if(c.consignado) return;
+    if(c.consignado || c.renegociacao) return;
     (c.pagamentos||[]).forEach(p=>{ if((p.data||'').slice(0,7)===ym) t+=parseValor(p.valor); });
     if(temAcordo(c)) c.acordo.parcelas.forEach(p=>{ if(p.pago && (p.pagoEm||'').slice(0,7)===ym) t+=parseValor(p.valor); });
     else if(c.status==='pago' && (c.pagoEm||'').slice(0,7)===ym && !(c.pagamentos&&c.pagamentos.length)) t+=parseValor(c.valor);
@@ -650,7 +651,7 @@ function salvarReneg(){
   const notas=sel.map(c=>c.nota).filter(Boolean).join(' + ');
   const cons=sel[0];
   cons.valor=novoValor.toFixed(2).replace('.',',');
-  cons.venc=novaData; cons.status='negociando';
+  cons.venc=novaData; cons.status='negociando'; cons.renegociacao=true;
   cons.acordo=null; cons.pagamentos=[]; cons.tarifas=[]; cons.pagoEm=''; cons.proximoContato='';
   if(sel.length>1) cons.nota=notas;
   cons.obs=('Renegociação/unificação'+(sel.length>1?(' das notas: '+notas):'')+(obs?(' · '+obs):'')).trim();
@@ -679,7 +680,7 @@ function render(){
   const q=document.getElementById('busca').value.toLowerCase().trim();
   let totalAtraso=0, qtdInad=0, recebido=0, f1=0,f2=0,f3=0;
   db.clientes.forEach(c=>{
-    if(c.consignado) return; // consignados são situação à parte
+    if(c.consignado || c.renegociacao) return; // situações à parte (abas próprias)
     recebido += valorPago(c);
     const dias=diasAtraso(c);
     if(c.status!=='pago' && dias>0){
@@ -703,7 +704,9 @@ function render(){
   renderAgenda();
 
   let arr=db.clientes.slice().filter(c=>{
-    if(c.status==='renegociado') return false; // arquivados por renegociação
+    if(c.status==='renegociado') return false; // arquivados (originais unificados)
+    if(filtro==='reneg') return !!c.renegociacao;
+    if(c.renegociacao) return false; // renegociações só na aba própria
     if(filtro==='consignado') return !!c.consignado;
     if(c.consignado) return false; // consignados só aparecem no filtro próprio
     const dias=diasAtraso(c);
@@ -727,8 +730,14 @@ function render(){
     const cs=db.clientes.filter(c=>c.consignado);
     const aberto=cs.reduce((s,c)=>s+valorEmAberto(c),0);
     const receb=cs.reduce((s,c)=>s+valorPago(c),0);
-    const filaC=filaCobranca(true).length;
-    prefixo=`<div class="agenda" style="border-left-color:var(--blue)"><h3>🏷️ Dívidas de consignado</h3><div class="muted" style="margin-top:4px;">${cs.length} pessoa(s) · Em aberto: <b style="color:var(--red)">${fmtBR(aberto)}</b> · Já recebido: <b style="color:var(--green)">${fmtBR(receb)}</b></div>${filaC?`<button class="btn wa wide" style="margin-top:10px;" onclick="abrirLote(true)">📲 Cobrar consignados em lote — ${filaC} na fila</button>`:''}</div>`;
+    const filaC=filaCobranca('consignado').length;
+    prefixo=`<div class="agenda" style="border-left-color:var(--blue)"><h3>🏷️ Dívidas de consignado</h3><div class="muted" style="margin-top:4px;">${cs.length} pessoa(s) · Em aberto: <b style="color:var(--red)">${fmtBR(aberto)}</b> · Já recebido: <b style="color:var(--green)">${fmtBR(receb)}</b></div>${filaC?`<button class="btn wa wide" style="margin-top:10px;" onclick="abrirLote('consignado')">📲 Cobrar consignados em lote — ${filaC} na fila</button>`:''}</div>`;
+  }
+  if(filtro==='reneg'){
+    const rs=db.clientes.filter(c=>c.renegociacao);
+    const aberto=rs.reduce((s,c)=>s+valorEmAberto(c),0);
+    const filaR=filaCobranca('reneg').length;
+    prefixo=`<div class="agenda" style="border-left-color:var(--yellow)"><h3>🤝 Renegociações</h3><div class="muted" style="margin-top:4px;">${rs.length} acordo(s) · Em aberto: <b style="color:var(--red)">${fmtBR(aberto)}</b></div>${filaR?`<button class="btn wa wide" style="margin-top:10px;" onclick="abrirLote('reneg')">📲 Cobrar renegociações em lote — ${filaR} na fila</button>`:''}</div>`;
   }
   if(!arr.length){ lista.innerHTML=prefixo+`<div class="empty"><div class="ico">📋</div><div>Nenhum cadastro encontrado.<br>${filtro==='consignado'?'Marque um cliente como consignado no cadastro.':'Toque no + para adicionar o primeiro cliente.'}</div></div>`; return; }
 
@@ -748,7 +757,7 @@ function render(){
       <div class="top">
         ${selMode?`<button class="check ${selecionado?'on':''}" style="margin-right:10px" title="Selecionar" onclick="event.stopPropagation(); toggleSel('${c.id}')">✓</button>`:''}
         <div style="flex:1; min-width:0">
-          <div class="nome">${esc(c.nome)} ${c.consignado?'<span class="badge b-consig">🏷️ Consignado</span>':''}</div>
+          <div class="nome">${esc(c.nome)} ${c.consignado?'<span class="badge b-consig">🏷️ Consignado</span>':''}${c.renegociacao?'<span class="badge b-negoc">🤝 Renegociação</span>':''}</div>
           <div class="doc">${c.tipo}: ${esc(c.doc)||'—'} · Nota ${esc(c.nota)||'—'}${acordoTxt}</div>
         </div>
         <div class="rightcol">
@@ -779,9 +788,9 @@ function ultimaCobrancaTxt(c){
 /* Painel: cobranças de hoje */
 function renderAgenda(){
   const h=hoje();
-  const agendados = db.clientes.filter(c=>!c.consignado && c.status!=='pago' && c.proximoContato===h);
-  const atrasadosProm = db.clientes.filter(c=>!c.consignado && c.status!=='pago' && c.proximoContato && c.proximoContato<h);
-  const recemVenc = db.clientes.filter(c=>!c.consignado && c.status!=='pago' && !c.proximoContato && diasAtraso(c)>=1 && diasAtraso(c)<=3);
+  const agendados = db.clientes.filter(c=>bucketDe(c)==='normal' && c.status!=='pago' && c.proximoContato===h);
+  const atrasadosProm = db.clientes.filter(c=>bucketDe(c)==='normal' && c.status!=='pago' && c.proximoContato && c.proximoContato<h);
+  const recemVenc = db.clientes.filter(c=>bucketDe(c)==='normal' && c.status!=='pago' && !c.proximoContato && diasAtraso(c)>=1 && diasAtraso(c)<=3);
   const el=document.getElementById('agenda');
   const total=agendados.length+atrasadosProm.length+recemVenc.length;
   const naFila=clientesParaCobrar().length;
@@ -1091,14 +1100,15 @@ function cobrarWhats(id){
 
 /* ---------- Cobrança em lote ---------- */
 let _fila=[], _filaIdx=0;
-function filaCobranca(consig){
-  const h=hoje();
-  return db.clientes.filter(c=> (!!c.consignado===!!consig) && c.status!=='pago' && c.tel && (!c.proximoContato || c.proximoContato<=h) && (consig || diasAtraso(c)>0))
+function bucketDe(c){ if(c.status==='renegociado') return 'arq'; if(c.consignado) return 'consignado'; if(c.renegociacao) return 'reneg'; return 'normal'; }
+function filaCobranca(bucket){
+  bucket=bucket||'normal'; const h=hoje();
+  return db.clientes.filter(c=> bucketDe(c)===bucket && c.status!=='pago' && c.tel && (!c.proximoContato || c.proximoContato<=h) && (bucket==='consignado' ? true : diasAtraso(c)>0))
     .sort((a,b)=>diasAtraso(b)-diasAtraso(a));
 }
-function clientesParaCobrar(){ return filaCobranca(false); }
-function abrirLote(consig){
-  _fila=filaCobranca(!!consig).map(c=>c.id); _filaIdx=0;
+function clientesParaCobrar(){ return filaCobranca('normal'); }
+function abrirLote(bucket){
+  _fila=filaCobranca(bucket||'normal').map(c=>c.id); _filaIdx=0;
   if(!_fila.length){ toast('✅ Ninguém para cobrar agora'); return; }
   document.getElementById('modalLote').classList.add('open');
   renderLote();
